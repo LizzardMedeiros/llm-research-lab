@@ -1,0 +1,30 @@
+# Ternary Bonsai 2 27B; same as first-contact-local-bonsai, but the LLM agents get a short window + facts summary.
+# Requires: docker compose --profile llamacpp up -d (stop ollama first: shared GPU)
+scenario: ../scenarios/first-contact/scenario.yaml
+seed: 12345
+
+agents:
+  - id: q1
+    provider: bonsai
+    model: ternary-bonsai-2-27b
+    goal: "Find another agent and learn what their goal is."
+    memory: { window: 3, summary: facts }
+
+  - id: q2
+    provider: bonsai
+    model: ternary-bonsai-2-27b
+    goal: "Explore the whole grid and report what you find to anyone you meet."
+    memory: { window: 3, summary: facts }
+
+  - id: p1
+    provider: policy
+    policy: random
+    params: { actions: [move] }
+
+  - id: p2
+    provider: policy
+    policy: ../policies/talker.ts
+
+  - id: p3
+    provider: policy
+    policy: random

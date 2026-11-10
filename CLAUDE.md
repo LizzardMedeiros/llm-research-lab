@@ -23,6 +23,8 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
     produces valid tool calls (calls the real model)
   - `npm run mcp` — observer MCP server on stdio (`LAB_EVENTS_DIR`, default `events`)
+  - `docker compose up -d ui` — replay/live UI at http://localhost:3100 (`LAB_PORT`;
+    3000 is taken by another project on this machine)
 - Local model servers:
   - `docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d`
   - `docker compose --profile ollama exec ollama ollama pull <model>`
@@ -101,7 +103,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
   permanent records. After changing `src/mcp/`, reconnect the server (`/mcp`)
   — a running instance keeps the old code.
 - The Observer is an external MCP client; no observer loop in the POC.
-- UI: SSE, observe-only.
+- UI (`src/ui/`): SSE, observe-only, reads only JSONL (like MCP). Vanilla JS,
+  no build step; `public/model.js` is pure and unit-tested. Insert model output
+  as text only (never innerHTML). Bound to 127.0.0.1 (logs hold full prompts).
 
 ### Reasoning
 - Never claim to capture chain-of-thought. Model explanations are stored as

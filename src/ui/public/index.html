@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>LLM Research Lab</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <strong class="brand">LLM Research Lab</strong>
+      <label class="run-picker">
+        Run
+        <select id="run-select" aria-label="Run"></select>
+      </label>
+      <span id="run-status" class="badge"></span>
+      <span id="run-meta" class="muted"></span>
+    </header>
+
+    <main class="layout">
+      <section class="panel world-panel" aria-label="World">
+        <div class="panel-head">
+          <h2 id="world-title">World</h2>
+          <span class="muted" id="world-caption"></span>
+        </div>
+        <div id="grid" class="grid" role="grid"></div>
+
+        <div class="controls" aria-label="Replay controls">
+          <button id="btn-first" title="First turn (Home)">⏮</button>
+          <button id="btn-prev" title="Previous turn (←)">◀</button>
+          <button id="btn-play" title="Play / pause (Space)">▶</button>
+          <button id="btn-next" title="Next turn (→)">▶︎|</button>
+          <button id="btn-last" title="Last turn (End)">⏭</button>
+          <select id="speed" aria-label="Playback speed">
+            <option value="1500">0.5×</option>
+            <option value="800" selected>1×</option>
+            <option value="300">3×</option>
+            <option value="100">10×</option>
+          </select>
+          <label class="follow"><input type="checkbox" id="follow" checked /> Follow live</label>
+        </div>
+        <input id="slider" type="range" min="0" max="0" value="0" aria-label="Turn" />
+        <div class="turn-label"><span id="turn-label">Turn 0</span></div>
+
+        <h3>Agents</h3>
+        <ul id="agents" class="agents"></ul>
+      </section>
+
+      <section class="panel turn-panel" aria-label="Turn decisions">
+        <div class="panel-head">
+          <h2 id="turn-title">Turn</h2>
+          <span class="muted">decisions taken from the state at the start of the turn</span>
+        </div>
+        <table class="decisions">
+          <thead>
+            <tr><th>Agent</th><th>At</th><th>Action</th><th>Result</th><th>Rationale · heard</th></tr>
+          </thead>
+          <tbody id="decisions"></tbody>
+        </table>
+        <h3>Effects</h3>
+        <ul id="effects" class="effects"></ul>
+      </section>
+
+      <section class="panel detail-panel" aria-label="Agent detail">
+        <div class="panel-head">
+          <h2 id="detail-title">Agent</h2>
+          <div class="tabs" role="tablist">
+            <button role="tab" data-tab="step" class="active">This turn</button>
+            <button role="tab" data-tab="timeline">Timeline</button>
+          </div>
+        </div>
+        <div id="detail" class="detail"><p class="muted">Select an agent.</p></div>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

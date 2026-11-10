@@ -16,9 +16,23 @@ services:
     volumes:
       - .:/app                 # live source for development
       - node_modules:/app/node_modules
-    ports:
-      - "${LAB_PORT:-3000}:3000"   # UI (SSE), when implemented
     command: ["npm", "test"]
+
+  # Observe-only UI over events/ (SSE). Bound to localhost: logs contain full prompts.
+  ui:
+    image: llm-research-lab
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    volumes:
+      - .:/app
+      - node_modules:/app/node_modules
+    environment:
+      LAB_EVENTS_DIR: events
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:${LAB_PORT:-3100}:3000"
+    command: ["npm", "run", "ui"]
+    restart: unless-stopped
 
   ollama:
     image: ollama/ollama:latest

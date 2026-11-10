@@ -1,0 +1,28 @@
+# first-contact-local with qwen3:4b-instruct (baseline memory: window 10, no summary).
+# Requires: docker compose --profile ollama up -d && ollama pull qwen3:4b-instruct
+scenario: ../scenarios/first-contact/scenario.yaml
+seed: 12345
+
+agents:
+  - id: q1
+    provider: ollama
+    model: qwen3:4b-instruct
+    goal: "Find another agent and learn what their goal is."
+
+  - id: q2
+    provider: ollama
+    model: qwen3:4b-instruct
+    goal: "Explore the whole grid and report what you find to anyone you meet."
+
+  - id: p1
+    provider: policy
+    policy: random
+    params: { actions: [move] }
+
+  - id: p2
+    provider: policy
+    policy: ../policies/talker.ts
+
+  - id: p3
+    provider: policy
+    policy: random

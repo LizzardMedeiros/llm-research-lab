@@ -672,38 +672,43 @@ reasoning process.
 
 ---
 
-# 11. Minimal UI
+# 11. UI
 
-A lightweight real-time view fed by **Server-Sent Events**. The UI only
-observes; it never controls the run.
+An observe-only web UI for mapping and replaying runs step by step. Like the
+MCP server, it reads only the JSONL logs. The server (`src/ui/server.ts`)
+streams a run over **SSE** and keeps tailing it while it is being written,
+so live runs update in place.
 
-```text
-Experiment: first-contact-001
-Run: 00042   Status: RUNNING   Turn: 37
-
-WORLD
-
-┌────┬────┬────┬────┬────┐
-│    │ a1 │    │    │    │
-├────┼────┼────┼────┼────┤
-│    │ ## │a3a5│    │    │
-├────┼────┼────┼────┼────┤
-│    │ a2 │    │ a4 │    │
-├────┼────┼────┼────┼────┤
-│    │    │    │ ## │    │
-├────┼────┼────┼────┼────┤
-│    │    │    │    │    │
-└────┴────┴────┴────┴────┘
-
-EVENTS
-
-12:31:01  a1  move north
-12:31:03  a3  speak "Where is a5?"
-12:31:05  a5  move west  ✗ rejected: wall
-12:31:07  a2  observe
+```bash
+docker compose up -d ui         # http://localhost:3100 (LAB_PORT)
 ```
 
-The UI is intentionally not a full research dashboard.
+```text
+┌ Run picker · status · scenario · seed ───────────────────────────────────────┐
+├ World after turn t ────┬ Decisions of turn t ─────────┬ Agent detail ───────────┤
+│ grid + agent chips     │ agent · at · action · result │ This turn:              │
+│ (action mark, ✗ when   │ · rationale · heard          │  observation, system    │
+│  rejected; dashed =    │ Effects: moves, speech →     │  prompt, prompt, raw    │
+│  previous cell)        │  recipients, reveals         │  response, tokens, ms   │
+│ ⏮ ◀ ▶ ▶| ⏭ speed      │                              │ Timeline: one row per   │
+│ slider · Follow live   │                              │  turn, click to jump    │
+│ Agents: model/policy,  │                              │                         │
+│  goal, running stats   │                              │                         │
+└────────────────────────┴──────────────────────────────┴─────────────────────────┘
+```
+
+- **Step navigation:** buttons, slider, keyboard (← → Home End, Space to play).
+- **Shareable steps:** the URL keeps run, turn and agent
+  (`#/<experiment>/<run>/<turn>/<agent>`). Any step can be reopened exactly.
+- **World after turn t** comes from the `environment.transition` snapshots.
+  Turn 0 is the initial state.
+- Model output is rendered as text, never as HTML.
+- Bound to `127.0.0.1` only: logs contain full prompts.
+- Vanilla JS, no build step (`src/ui/public/`). The run model
+  (`model.js`) is pure and unit-tested.
+
+The UI does not control runs (no pause or intervention): that remains out of
+scope.
 
 ---
 
@@ -743,7 +748,7 @@ src/
 ├── events/          # event schema, JSONL store
 ├── config/          # YAML loading and validation
 ├── mcp/             # read-only MCP server over JSONL
-└── ui/              # SSE server + minimal view
+└── ui/              # SSE server + replay view (public/: vanilla JS)
 
 scenarios/
 └── first-contact/
@@ -774,7 +779,8 @@ The application and the local LLMs run in containers.
 
 ```text
 compose.yaml
-├── lab        # Node 22: engine, CLI, tests, UI (SSE) — source bind-mounted
+├── lab        # Node 22: engine, CLI, tests — source bind-mounted
+├── ui         # replay/live UI on http://localhost:3100 (same image)
 ├── ollama     # profile "ollama": local models, persisted in a volume
 └── llamacpp   # profile "llamacpp": Bonsai via the PrismML llama.cpp fork (GPU)
 compose.gpu.yaml   # optional: NVIDIA GPU for ollama
@@ -842,7 +848,6 @@ Real providers are used only for integration tests and actual experiments.
 - multi-user support;
 - advanced analytics;
 - complex dashboards;
-- visual replay;
 - human intervention;
 - hundreds of agents;
 - sophisticated memory systems;
@@ -915,7 +920,7 @@ Possible extensions, ordered by what real experiments reveal:
 Model comparison runs (same scenario and seed, one model per run)
 Built-in observer loop with analyses recorded as events
 Advanced observability (OpenTelemetry, tracing, metrics)
-Advanced research UI and replay
+Advanced research UI (comparisons across runs, charts)
 Human intervention
 Parallel experiment runs
 Statistical analysis
