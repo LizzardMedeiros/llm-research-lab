@@ -22,6 +22,8 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `npm run experiment -- <experiment.yaml>` — run an experiment
   - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
     produces valid tool calls (calls the real model)
+  - `npm run story -- <exp>/<run> [--narrator <endpoint>/<model>]` — story.json for a video
+  - `docker compose --profile video run --rm video node /app/video/build.mjs <story.json>` — render it
   - `npm run mcp` — observer MCP server on stdio (`LAB_EVENTS_DIR`, default `events`)
   - `docker compose up -d ui` — replay/live UI at http://localhost:3100 (`LAB_PORT`;
     3000 is taken by another project on this machine)
@@ -111,6 +113,15 @@ spec; read it before architectural changes and keep it in sync with decisions.
   no build step; `public/model.js` is pure and unit-tested. Insert model output
   as text only (never innerHTML). Bound to 127.0.0.1 (logs hold full prompts).
 
+### Run videos
+- `npm run story` (`src/story/`) reads only JSONL. Dialogue in stories and
+  videos is always verbatim, with event_id traceability; never paraphrase
+  or invent dialogue.
+- Narration states facts only. Model narrators get scene facts with actions
+  marked as attempts; the video footer must name who wrote the narration.
+- `video/` is a separate package and image (HyperFrames 0.9.31, GSAP, ffmpeg,
+  Chrome, Kokoro). Keep telemetry disabled; no HeyGen account or cloud render.
+
 ### Reasoning
 - Never claim to capture chain-of-thought. Model explanations are stored as
   `rationale: { type: "model_reported", content }`.
@@ -139,7 +150,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
 
 ## Scope guard
 
-Keep the POC small. Anything listed in README §17 (Out of Scope) needs explicit
+Keep the POC small. Anything listed in README §18 (Out of Scope) needs explicit
 user approval before implementation.
 
 ## Project Claude config

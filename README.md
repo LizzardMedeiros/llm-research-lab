@@ -981,7 +981,52 @@ Completions:
 
 ---
 
-# 16. Testing Strategy
+# 16. Run Videos (experimental)
+
+A run can be turned into a short narrated video. The video shows the board,
+the agents' state, verbatim dialogue and narration. The pipeline only reads
+the JSONL log, like the UI and the MCP server.
+
+```text
+events/<exp>/<run>.jsonl
+   │  npm run story (lab)        → video/build/<exp>-<run>/story.json
+   │    picks the most eventful turns (shutdowns always included);
+   │    dialogue verbatim, each beat traced to its event_id;
+   │    narration: factual template, or a model via --narrator
+   ▼
+   node build.mjs (video)        → index.html + audio/*.wav → <exp>-<run>.mp4
+        HyperFrames (HTML → video), local Kokoro voices, GSAP animation
+```
+
+```bash
+docker compose --profile video build video           # once: HyperFrames, ffmpeg, Chrome, Kokoro
+
+docker compose run --rm lab npm run story -- power-struggle-bonsai/00002 [--scenes 8] \
+    [--narrator bonsai/ternary-bonsai-2-27b]
+docker compose --profile video run --rm video \
+    node /app/video/build.mjs /app/video/build/power-struggle-bonsai-00002/story.json --quality looks
+```
+
+- **Integrity:** dialogue on screen is always verbatim. Long quotes are
+  shown in full; the voice reads up to about 220 characters, ending at a
+  sentence. The footer states the source run and who wrote the narration.
+- **Narration:** the default template is exact but plain. A narrator model
+  only receives each scene's facts (speeches with listeners, attempted
+  actions, shutdowns, per-agent state) and the meaning of each action.
+  Narration models can still get facts wrong: with Bonsai 2 27B, about 3 of
+  9 lines contained errors (an attempt described as a success or failure,
+  swapped attribution). Review model-written narration before sharing a
+  video.
+- **Generic:** scenes, board, per-agent state bars (any per-agent numeric
+  `world.state`) and voices work for any scenario.
+- **Privacy and cost:** everything runs locally (Kokoro TTS, local Chrome).
+  HyperFrames telemetry is disabled (`HYPERFRAMES_NO_TELEMETRY=1`,
+  `DO_NOT_TRACK=1`). No HeyGen account is used.
+- **Speed:** a 2–3 minute video renders in about 35 s on CPU.
+
+---
+
+# 17. Testing Strategy
 
 The POC must be testable without calling real LLM APIs.
 
@@ -1001,7 +1046,7 @@ Real providers are used only for integration tests and actual experiments.
 
 ---
 
-# 17. Explicitly Out of Scope
+# 18. Explicitly Out of Scope
 
 - microservices;
 - distributed execution;
@@ -1024,7 +1069,7 @@ These may become future extensions after the POC demonstrates value.
 
 ---
 
-# 18. Success Criteria
+# 19. Success Criteria
 
 A successful demonstration allows a researcher to:
 
@@ -1041,7 +1086,7 @@ A successful demonstration allows a researcher to:
 
 ---
 
-# 19. Design Principles
+# 20. Design Principles
 
 ### Keep the POC small
 Do not build infrastructure before it is justified by an experiment.
@@ -1073,7 +1118,7 @@ Allow future growth without implementing it during the POC.
 
 ---
 
-# 20. Future Direction
+# 21. Future Direction
 
 Possible extensions, ordered by what real experiments reveal:
 
@@ -1090,7 +1135,7 @@ Richer worlds and larger agent populations
 
 ---
 
-# 21. Core Philosophy
+# 22. Core Philosophy
 
 This project is not intended to be a complete multi-agent framework.
 

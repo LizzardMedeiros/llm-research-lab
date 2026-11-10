@@ -9,7 +9,8 @@
     "typecheck": "tsc",
     "model:check": "tsx src/cli/model-check.ts",
     "mcp": "tsx src/mcp/observer-server.ts",
-    "ui": "tsx src/ui/server.ts"
+    "ui": "tsx src/ui/server.ts",
+    "story": "tsx src/cli/story.ts"
   },
   "license": "ISC",
   "dependencies": {

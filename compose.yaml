@@ -36,6 +36,22 @@ services:
     command: ["npm", "run", "ui"]
     restart: unless-stopped
 
+  # Video pipeline (HyperFrames + ffmpeg + Chrome + Kokoro TTS). Profile "video".
+  video:
+    build: ./video
+    image: llm-research-lab-video
+    profiles: ["video"]
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    shm_size: 512m                      # Chrome needs >= 256 MB
+    environment:
+      HYPERFRAMES_NO_TELEMETRY: "1"
+      DO_NOT_TRACK: "1"
+    volumes:
+      - .:/app
+      - video_cache:/home/node/.cache   # Chrome download and TTS model, kept between runs
+    command: ["npx", "--prefix", "/video", "hyperframes", "doctor"]
+
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]
@@ -82,6 +98,7 @@ services:
               capabilities: [gpu]
 
 volumes:
+  video_cache:
   node_modules:
   ollama:
   llamacpp_models:

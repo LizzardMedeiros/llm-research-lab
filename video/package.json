@@ -1,0 +1,13 @@
+{
+  "name": "llm-research-lab-video",
+  "private": true,
+  "type": "module",
+  "description": "Turns lab run logs into narrated videos with HyperFrames",
+  "dependencies": {
+    "hyperframes": "0.9.31",
+    "gsap": "3.13.0"
+  },
+  "scripts": {
+    "build": "node build.mjs"
+  }
+}
