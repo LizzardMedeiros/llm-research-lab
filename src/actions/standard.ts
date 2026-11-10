@@ -78,7 +78,7 @@ export function createSpeak(params: NonNullable<ActionsConfig["speak"]>): Action
     },
     effect(args, { agent, world }) {
       const recipients = [...world.agents.values()]
-        .filter((other) => other.id !== agent.id && distance(other.position, agent.position) <= radius)
+        .filter((other) => other.id !== agent.id && world.isActive(other.id) && distance(other.position, agent.position) <= radius)
         .map((other) => other.id);
       return { kind: "speak", agentId: agent.id, text: args["text"] as string, recipients };
     },

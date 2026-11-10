@@ -30,6 +30,7 @@ const request = (model: string): ModelRequest => ({
       history: [],
       observation: {
         turn: 1,
+        max_turns: 50,
         agent_id: "a1",
         position: { x: 2, y: 2 },
         grid_size: { width: 5, height: 5 },

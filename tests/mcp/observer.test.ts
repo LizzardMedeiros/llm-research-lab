@@ -72,7 +72,7 @@ describe("run reader", () => {
 
   it("compacts observations, in the current and the pre-0.2 format", () => {
     const current = {
-      turn: 3, agent_id: "a", position: { x: 2, y: 1 }, grid_size: { width: 5, height: 5 },
+      turn: 3, max_turns: 50, agent_id: "a", position: { x: 2, y: 1 }, grid_size: { width: 5, height: 5 },
       cell: { type: "floor", agents: ["b"] }, messages: [], last_action_error: null, available_actions: ["wait"],
       revealed: [{ x: 1, y: 1, type: "wall", agents: [] }, { x: 3, y: 1, type: "floor", agents: ["c"] }],
       score: 7,

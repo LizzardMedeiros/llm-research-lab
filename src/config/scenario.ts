@@ -63,6 +63,8 @@ export const ScenarioSchema = z
       })
       .strict(),
     memory: MemorySchema.default({ window: 10, summary: "none" }),
+    /** Free-form numbers/settings for hooks; also usable in prompt.system as {{name}}. */
+    params: z.record(z.string(), z.unknown()).default({}),
     prompt: z.object({ system: z.string() }).strict().optional(),
     hooks: z.string().optional(),
   })
@@ -99,6 +101,19 @@ export function parseRange(range: string): number {
   return Number(match[1]);
 }
 
+/**
+ * Replaces {{name}} in the scenario prompt with `params`, plus the built-in
+ * {{max_turns}}. Unknown names are a config error.
+ */
+export function renderPrompt(config: ScenarioConfig): string | undefined {
+  if (!config.prompt) return undefined;
+  const values: Record<string, unknown> = { max_turns: config.rules.end.max_turns, ...config.params };
+  return config.prompt.system.replace(/\{\{\s*([A-Za-z0-9_]+)\s*\}\}/g, (_m, name: string) => {
+    if (!(name in values)) throw new ConfigError(`Scenario ${config.scenario}: prompt uses {{${name}}} but params.${name} is not defined`);
+    return String(values[name]);
+  });
+}
+
 export function resolveScenario(config: ScenarioConfig, path: string): LoadedScenario {
   let grid;
   try {
@@ -131,6 +146,7 @@ export function resolveScenario(config: ScenarioConfig, path: string): LoadedSce
     throw new ConfigError(`Scenario ${config.scenario}: no standard actions enabled`);
   }
 
+  renderPrompt(config); // fail early on unknown {{names}}
   const hooksPath = config.hooks ? resolve(dirname(path), config.hooks) : undefined;
   return { config, path, hooksPath, width: grid.width, height: grid.height, cells };
 }

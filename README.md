@@ -209,7 +209,8 @@ behavior gets a different name.
 ```ts
 // src/engine/scenario-rules.ts
 interface ScenarioRules {
-  actions?(): CustomAction[];                                   // new tools
+  setup?(world: World, rng: Rng): void;                         // initial world.state, before turn 1
+  actions?(ctx: { agentIds; params }): CustomAction[];          // new tools (schemas may enum agent ids)
   observe?(observation: Observation, agent: AgentState, world: World): Observation;
   validate?(action: { name; args }, ctx): string | null;        // extra rejection rules
   afterTurn?(world: World, rng: Rng, turn: number): void;       // world dynamics
@@ -228,9 +229,24 @@ interface CustomAction {
 Every hook is optional. A missing hook falls back to the built-in mechanic
 configured in YAML.
 
-Hooks may mutate the world only inside a custom action's `apply` and in
-`afterTurn`. Any new state (scores, inventories, roles) lives in
+Hooks may mutate the world only in `setup`, a custom action's `apply` and
+`afterTurn`. Any new state (scores, inventories, energy) lives in
 `world.state`, which is part of every snapshot.
+
+Hooks also have:
+
+- `world.params`: the scenario's free-form `params` block. The same values
+  can be used in `prompt.system` as `{{name}}`, plus the built-in
+  `{{max_turns}}`, so the numbers in the rules and in the prompt never drift.
+- `world.roles`: the role each experiment agent declares (`role: holder`).
+  Scenarios never reference agent ids.
+- `world.deactivate(id, turn, reason)`: shuts an agent down for the rest of
+  the run. A deactivated agent stays on the map as an inert body, is never
+  asked to decide again (no model calls), does not hear speech, and produces
+  one `agent.deactivated` event. The run ends early when no agent is active.
+
+When `afterTurn` exists, the engine records an extra `environment.transition`
+(`phase: "after_turn"`) so its changes are in the log.
 
 ## Turn resolution
 
@@ -497,6 +513,7 @@ agents:
     provider: claude          # endpoint name from providers.yaml
     model: claude-opus-5-5
     goal: "Find another agent and learn what their goal is."
+    # role: holder            # optional, scenario-defined (read by hooks)
 
   - id: a2
     provider: ollama
@@ -561,6 +578,7 @@ agent.model_request
 agent.model_response
 agent.model_error         # provider failure; the turn becomes wait
 agent.action              # proposed call, with model-reported rationale if any
+agent.deactivated         # agent shut down / eliminated (reason); never acts again
 
 environment.action_rejected
 environment.transition    # includes a full world snapshot

@@ -96,6 +96,11 @@ memory:
   window: 10          # last N turns in full
   summary: none       # none | facts (engine-compiled from the agent's own observations)
 
+# params:                 # numbers for hooks; usable in the prompt as {{name}}
+#   start_charge: 20
+# prompt:                 # public rules the agents must know (facts, no strategy hints)
+#   system: |
+#     ... The run lasts {{max_turns}} turns. You start with {{start_charge}} charge ...
 # hooks: ./rules.ts
 ```
 
@@ -105,7 +110,8 @@ memory:
 import type { ScenarioRules } from "../../src/engine/scenario-rules";
 
 const rules: ScenarioRules = {
-  // actions() { return [{ name, description, inputSchema, validate?, apply }]; }, // new tools
+  // setup(world, rng) { world.state = { ... }; },                                 // initial state
+  // actions({ agentIds, params }) { return [{ name, description, inputSchema, validate?, apply }]; }, // new tools
   // observe(observation, agent, world) { return { ...observation, extra }; },    // what the agent sees
   // validate({ name, args }, ctx) { return "reason" or null; },                   // extra rejections
   // afterTurn(world, rng, turn) { ... },                                          // world dynamics
@@ -118,7 +124,13 @@ export default rules;
 Hook rules:
 - Use only the `rng` argument for randomness. Never use `Math.random()`, `Date`
   or I/O.
-- Mutate the world only inside a custom action's `apply` or in `afterTurn`.
+- Mutate the world only in `setup`, a custom action's `apply` or `afterTurn`.
+- Put numbers in `params` (read via `world.params`) and reference them in the
+  prompt as `{{name}}`; `{{max_turns}}` is built in.
+- Never reference agent ids: use roles (`world.roles`, set by `role:` in the
+  experiment) and `ctx.agentIds` for schemas that target agents.
+- Eliminate agents with `world.deactivate(id, turn, reason)`.
+- See `scenarios/power-struggle/rules.ts` for a complete example.
 - Rejections must carry a human-readable `reason`, because it goes to the agent
   and to the event log.
 - Any new world state a hook introduces (scores, inventories, roles) must be

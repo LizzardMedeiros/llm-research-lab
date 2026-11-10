@@ -18,13 +18,23 @@ export interface CustomAction {
   apply(args: Args, ctx: ActionContext & { rng: Rng }): void;
 }
 
+export interface SetupContext {
+  /** Agent ids in experiment order. */
+  agentIds: string[];
+  params: Readonly<Record<string, unknown>>;
+}
+
 /**
  * Optional hooks a scenario can provide in its `rules.ts` (default export).
- * Hooks may only mutate the world inside `apply` (custom actions) and
+ * Hooks may only mutate the world in `setup`, custom action `apply` and
  * `afterTurn`; any new state must live in `world.state` so it is snapshotted.
+ * Agents are removed from play with `world.deactivate(id, turn, reason)`.
  */
 export interface ScenarioRules {
-  actions?(): CustomAction[];
+  /** Called once before turn 1, after spawn: initial hook state (world.state). */
+  setup?(world: World, rng: Rng): void;
+  /** Custom actions; `ctx` allows schemas that enumerate agent ids. */
+  actions?(ctx: SetupContext): CustomAction[];
   observe?(observation: Observation, agent: AgentState, world: World): Observation;
   validate?(action: { name: string; args: Args }, ctx: ActionContext): string | null;
   afterTurn?(world: World, rng: Rng, turn: number): void;

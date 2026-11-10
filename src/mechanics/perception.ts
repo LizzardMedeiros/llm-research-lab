@@ -18,6 +18,8 @@ export interface ObservedCell extends Point {
 /** What an agent is allowed to know at the start of its turn. */
 export interface Observation {
   turn: number;
+  /** Last turn of the run (scenario rules.end.max_turns). */
+  max_turns: number;
   agent_id: string;
   position: Point;
   grid_size: { width: number; height: number };
@@ -50,11 +52,13 @@ export function buildObservation(
   perceptionMode: string,
   availableActions: string[],
   mailbox: Mailbox,
+  maxTurns: number,
 ): Observation {
   const agent = world.agent(agentId);
   const radius = parseRange(perceptionMode);
   const observation: Observation = {
     turn,
+    max_turns: maxTurns,
     agent_id: agentId,
     position: { x: agent.position[0], y: agent.position[1] },
     grid_size: { width: world.width, height: world.height },

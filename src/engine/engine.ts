@@ -46,6 +46,7 @@ interface Pending {
  */
 export class Engine {
   private readonly history = new Map<string, MemoryEntry[]>();
+  private readonly reportedInactive = new Set<string>();
   private readonly actionsByName: Map<string, ActionDefinition>;
 
   constructor(private readonly options: EngineOptions) {
@@ -61,11 +62,29 @@ export class Engine {
         scenario.config.scheduling === "sequential"
           ? rng.shuffle(this.options.agents).map((agent) => [agent])
           : [this.options.agents];
-      for (const batch of batches) await this.runBatch(turn, batch);
-      rules.afterTurn?.(world, rng, turn);
+      for (const batch of batches) {
+        const active = batch.filter((agent) => world.isActive(agent.id));
+        if (active.length > 0) await this.runBatch(turn, active);
+      }
+      if (rules.afterTurn) {
+        rules.afterTurn(world, rng, turn);
+        this.reportDeactivations(turn);
+        // State changed outside the batches: record it so the log stays complete.
+        this.options.log.emit("environment.transition", turn, { agents: [], effects: [], phase: "after_turn", snapshot: world.snapshot(turn) });
+      }
       if (rules.isFinished?.(world, turn)) return { turns: turn, reason: "scenario_finished" };
+      if (world.activeAgents().length === 0) return { turns: turn, reason: "scenario_finished" };
     }
     return { turns: maxTurns, reason: "max_turns" };
+  }
+
+  /** Emits agent.deactivated once per agent shut down since the last check. */
+  private reportDeactivations(turn: number) {
+    for (const [id, info] of this.options.world.inactive) {
+      if (this.reportedInactive.has(id)) continue;
+      this.reportedInactive.add(id);
+      this.options.log.emit("agent.deactivated", turn, { reason: info.reason, since_turn: info.turn }, id);
+    }
   }
 
   private async runBatch(turn: number, batch: EngineAgent[]) {
@@ -75,7 +94,7 @@ export class Engine {
 
     // 1. Observations, all from the state at the start of the batch.
     const observations = batch.map((agent) => {
-      const base = buildObservation(world, agent.id, turn, scenario.config.rules.perception.mode, actionNames, world.takeMailbox(agent.id));
+      const base = buildObservation(world, agent.id, turn, scenario.config.rules.perception.mode, actionNames, world.takeMailbox(agent.id), scenario.config.rules.end.max_turns);
       const observation = rules.observe ? rules.observe(base, world.agent(agent.id), world) : base;
       log.emit("agent.observation", turn, { observation }, agent.id);
       return observation;
@@ -136,6 +155,7 @@ export class Engine {
       this.history.get(entry.agentId)!.push({ turn, observation: entry.observation, action: entry.action, rejected: entry.rejected });
     }
 
+    this.reportDeactivations(turn);
     log.emit("environment.transition", turn, {
       agents: batch.map((a) => a.id),
       effects: pending.filter((p) => p.effect).map((p) => describeEffect(p.effect!)),

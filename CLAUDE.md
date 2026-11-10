@@ -87,8 +87,12 @@ spec; read it before architectural changes and keep it in sync with decisions.
   absorb unreliable turns (war-game finding: hallucinations become permanent).
   Never replay past turns as assistant text messages: it trains models to
   stop calling tools (measured, README §5).
-- Hooks (`src/engine/scenario-rules.ts`) mutate the world only in custom
-  action `apply` and `afterTurn`; new state goes in `world.state`.
+- Hooks (`src/engine/scenario-rules.ts`) mutate the world only in `setup`,
+  custom action `apply` and `afterTurn`; new state goes in `world.state`.
+  Numbers go in scenario `params` and reach the prompt via `{{name}}` (plus
+  `{{max_turns}}`) — never duplicate them in prompt text. Agents are told
+  apart by experiment `role`, never by id. Eliminate agents with
+  `world.deactivate` (engine skips them and logs `agent.deactivated`).
 
 ### Events and observation
 - The event log is the single source of truth for UI and MCP.

@@ -20,6 +20,8 @@ const PolicyAgentSchema = z
     policy: z.string().min(1),
     params: z.record(z.string(), z.unknown()).default({}),
     goal: z.string().default(""),
+    /** Scenario-defined role (e.g. "holder"), read by hooks via world.roles. */
+    role: z.string().min(1).optional(),
     memory: MemoryOverrideSchema,
   })
   .strict();
@@ -32,6 +34,7 @@ const ModelAgentSchema = z
     model: z.string().min(1),
     goal: z.string().default(""),
     temperature: z.number().optional(),
+    role: z.string().min(1).optional(),
     memory: MemoryOverrideSchema,
   })
   .strict();

@@ -5,6 +5,7 @@ import type { Observation } from "../../src/mechanics/perception.js";
 
 const obs = (turn: number, x: number, y: number, extra: Partial<Observation> = {}): Observation => ({
   turn,
+  max_turns: 50,
   agent_id: "q1",
   position: { x, y },
   grid_size: { width: 5, height: 5 },

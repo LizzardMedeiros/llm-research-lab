@@ -4,7 +4,9 @@ import {
   agentsOf,
   createIndex,
   describeAction,
+  extraFields,
   mapCells,
+  shutDownAt,
   snapshotAfter,
   statsUntil,
   toXY,
@@ -203,7 +205,7 @@ function renderGrid() {
             h(
               "span",
               {
-                class: `chip${id === state.agent ? " selected" : ""}`,
+                class: `chip${id === state.agent ? " selected" : ""}${shutDownAt(state.index, id, turn) ? " off" : ""}`,
                 style: { background: colorOf(id) },
                 title: `${id}: ${describeAction(records.get(id)) || "initial position"}${records.get(id)?.rejected ? ` (rejected: ${records.get(id).rejected})` : ""}`,
                 onclick: () => selectAgent(id),
@@ -225,10 +227,19 @@ function renderAgents() {
   $("agents").replaceChildren(
     ...agentsOf(state.index).map((a) => {
       const s = stats(a.id);
+      const off = shutDownAt(state.index, a.id, state.turn);
       return h(
         "li",
-        { class: a.id === state.agent ? "selected" : "", onclick: () => selectAgent(a.id) },
-        h("div", { class: "name" }, h("span", { class: "swatch", style: { background: colorOf(a.id) } }), a.id, h("span", { class: "muted" }, deciderLabel(a))),
+        { class: `${a.id === state.agent ? "selected" : ""}${off ? " off" : ""}`, onclick: () => selectAgent(a.id) },
+        h(
+          "div",
+          { class: "name" },
+          h("span", { class: "swatch", style: { background: colorOf(a.id) } }),
+          a.id,
+          a.role ? h("span", { class: "role" }, a.role) : null,
+          h("span", { class: "muted" }, deciderLabel(a)),
+        ),
+        off ? h("div", { class: "sub bad" }, `shut down at turn ${off.turn}: ${off.reason}`) : null,
         a.goal ? h("div", { class: "sub" }, `Goal: ${a.goal}`) : null,
         h("div", { class: "sub" }, `until t${state.turn}: ${s.accepted} accepted · ${s.rejected} rejected · spoke ${s.spoke} · heard ${s.heard}`),
       );
@@ -243,8 +254,9 @@ function renderDecisions() {
   const rows = agentsOf(index).map((a) => {
     const r = t?.agents.get(a.id);
     const obs = r?.observation;
+    const off = shutDownAt(index, a.id, turn);
     const result = !r
-      ? h("span", { class: "muted" }, "—")
+      ? h("span", { class: off ? "bad" : "muted" }, off ? (off.turn === turn ? `⏻ shut down: ${off.reason}` : "⏻ shut down") : "—")
       : r.rejected
         ? h("span", { class: "bad" }, `✗ ${r.rejected}`)
         : r.error
@@ -265,6 +277,8 @@ function renderDecisions() {
         r?.action?.rationale ? h("div", { class: "quote" }, `“${r.action.rationale.content}”`) : null,
         obs?.cell?.agents?.length ? h("div", { class: "heard" }, `with: ${obs.cell.agents.join(", ")}`) : null,
         ...(obs?.messages ?? []).map((m) => h("div", { class: "heard" }, `heard ${m.from}: “${m.text}”`)),
+        ...(Array.isArray(obs?.notices) ? obs.notices.map((n) => h("div", { class: "heard warn" }, `notice: ${n}`)) : []),
+        r && off?.turn === turn && r.action ? h("div", { class: "heard bad" }, `⏻ shut down this turn: ${off.reason}`) : null,
       ),
     );
   });
@@ -307,7 +321,9 @@ function stepView(info, r, turn) {
     h("dt", {}, "Goal"), h("dd", {}, info.goal || "—"),
     h("dt", {}, "Memory"), h("dd", {}, info.memory ? JSON.stringify(info.memory) : "—"),
     h("dt", {}, "Turn"), h("dd", {}, turn === 0 ? "initial state" : String(turn)),
+    h("dt", {}, "Role"), h("dd", {}, info.role ?? "—"),
     h("dt", {}, "At"), h("dd", {}, obs ? `${fmtXY(obs.position)} ${obs.cell?.type ?? ""}` : "—"),
+    ...extraFields(obs).flatMap(([key, value]) => [h("dt", {}, key), h("dd", {}, h("code", {}, typeof value === "object" ? JSON.stringify(value) : String(value)))]),
     h("dt", {}, "Action"), h("dd", {}, h("code", {}, describeAction(r) || "—")),
     h("dt", {}, "Result"), h("dd", { class: r?.rejected ? "bad" : "ok" }, r ? (r.rejected ? r.rejected : r.action ? "accepted" : "—") : "—"),
   );

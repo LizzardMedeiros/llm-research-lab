@@ -2,7 +2,7 @@
 // step can be shown and replayed. No DOM here (unit-tested in Node).
 
 export function createIndex() {
-  return { started: null, status: "running", maxTurn: 0, turns: new Map(), count: 0, finished: null };
+  return { started: null, status: "running", maxTurn: 0, turns: new Map(), count: 0, finished: null, deactivated: new Map() };
 }
 
 function turnOf(index, n) {
@@ -34,6 +34,7 @@ export function addEvent(index, event) {
     index.status = "failed";
     index.finished = event.payload;
   }
+  if (event.type === "agent.deactivated") index.deactivated.set(event.agent_id, { turn: event.turn, reason: event.payload.reason });
   if (!(event.turn > 0) || event.type.startsWith("experiment.")) return;
 
   index.maxTurn = Math.max(index.maxTurn, event.turn);
@@ -84,6 +85,22 @@ export function mapCells(index) {
         blocks: Boolean(scenario.legend[symbol]?.blocks_movement),
       })),
     );
+}
+
+/** Shutdown info if the agent was deactivated at or before `turn`. */
+export function shutDownAt(index, id, turn) {
+  const info = index.deactivated.get(id);
+  return info && info.turn <= turn ? info : null;
+}
+
+const BASE_OBSERVATION_KEYS = new Set([
+  "turn", "max_turns", "agent_id", "position", "grid_size", "cell", "visible", "messages", "revealed", "last_action_error", "available_actions",
+]);
+
+/** Scenario-specific fields a hook added to an observation (e.g. energy). */
+export function extraFields(observation) {
+  if (!observation) return [];
+  return Object.entries(observation).filter(([key]) => !BASE_OBSERVATION_KEYS.has(key));
 }
 
 /** One record per turn for an agent (what it saw, did, and what happened). */

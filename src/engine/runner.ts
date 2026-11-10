@@ -4,7 +4,7 @@ import { LlmAgent } from "../agents/llm-agent.js";
 import type { Decider } from "../agents/types.js";
 import { ConfigError } from "../config/errors.js";
 import { isPolicyAgent, loadExperiment, resolvePolicyRef, type LoadedExperiment } from "../config/experiment.js";
-import { loadScenario, type LoadedScenario, type Position } from "../config/scenario.js";
+import { loadScenario, renderPrompt, type LoadedScenario, type Position } from "../config/scenario.js";
 import { EventLog, JsonlSink, nextRunId, type EventSink } from "../events/event.js";
 import { loadProvidersConfig } from "../models/config.js";
 import { createProvider } from "../models/registry.js";
@@ -58,7 +58,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   const rules = await loadScenarioRules(scenario.hooksPath);
   const actions = [
     ...createStandardActions(scenario.config.actions),
-    ...(rules.actions?.() ?? []).map(toActionDefinition),
+    ...(rules.actions?.({ agentIds: experiment.config.agents.map((a) => a.id), params: scenario.config.params }) ?? []).map(toActionDefinition),
   ];
   const actionNames = new Set(actions.map((a) => a.name));
   if (actionNames.size !== actions.length) throw new ConfigError("Duplicate action names in scenario");
@@ -99,7 +99,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
           provider,
           model: agent.model,
           goal: agent.goal,
-          systemPrompt: scenario.config.prompt?.system,
+          systemPrompt: renderPrompt(scenario.config),
           temperature: agent.temperature,
           memory,
         }),
@@ -110,6 +110,13 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   const world = new World(scenario);
   const positions = spawnPositions(scenario, deciders.length, envRng);
   deciders.forEach((d, i) => world.addAgent(d.id, positions[i]!));
+  world.params = scenario.config.params;
+  for (const agent of experiment.config.agents) if (agent.role) world.roles.set(agent.id, agent.role);
+  try {
+    rules.setup?.(world, envRng);
+  } catch (error) {
+    throw new ConfigError(`Scenario ${scenario.config.scenario} setup failed: ${(error as Error).message}`);
+  }
 
   const endpoints = providersConfig
     ? Object.fromEntries(
@@ -137,6 +144,7 @@ export async function runExperiment(path: string, options: RunOptions = {}): Pro
   options.onLog?.(log);
 
   const goals = new Map(experiment.config.agents.map((a) => [a.id, a.goal]));
+  const roles = new Map(experiment.config.agents.map((a) => [a.id, a.role]));
   log.emit("experiment.started", 0, {
     experiment_id: experiment.experimentId,
     run_id: runId,
@@ -144,7 +152,7 @@ export async function runExperiment(path: string, options: RunOptions = {}): Pro
     experiment_file: experiment.path,
     scenario: { file: prepared.scenario.path, hooks: prepared.scenario.hooksPath ?? null, ...prepared.scenario.config },
     actions: prepared.actions.map((a) => a.tool),
-    agents: prepared.deciders.map((d) => ({ id: d.id, goal: goals.get(d.id), ...d.decider.describe })),
+    agents: prepared.deciders.map((d) => ({ id: d.id, goal: goals.get(d.id), role: roles.get(d.id), ...d.decider.describe })),
     endpoints: prepared.endpoints,
     snapshot: prepared.world.snapshot(0),
   });

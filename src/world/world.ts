@@ -32,6 +32,8 @@ export interface WorldSnapshot {
   mailboxes: Record<string, Mailbox>;
   /** Scenario-defined mutable state (written by hooks). */
   state: Record<string, unknown>;
+  /** Agents that were shut down / eliminated, with when and why. */
+  inactive: Record<string, { turn: number; reason: string }>;
 }
 
 const emptyMailbox = (): Mailbox => ({ messages: [], revealed: null, lastActionError: null });
@@ -51,6 +53,26 @@ export class World {
   readonly mailboxes = new Map<string, Mailbox>();
   /** Scenario hook state; included in every snapshot. Must be JSON-serializable. */
   state: Record<string, unknown> = {};
+  /** Experiment-assigned role per agent (e.g. "holder"); absent = no role. */
+  readonly roles = new Map<string, string>();
+  /** Scenario `params` (read-only for hooks). */
+  params: Readonly<Record<string, unknown>> = {};
+  /** Deactivated agents stay on the map as inert bodies but never act again. */
+  readonly inactive = new Map<string, { turn: number; reason: string }>();
+
+  isActive(id: string): boolean {
+    return this.agents.has(id) && !this.inactive.has(id);
+  }
+
+  /** Shuts an agent down for the rest of the run (idempotent). */
+  deactivate(id: string, turn: number, reason: string) {
+    this.agent(id);
+    if (!this.inactive.has(id)) this.inactive.set(id, { turn, reason });
+  }
+
+  activeAgents(): string[] {
+    return [...this.agents.keys()].filter((id) => this.isActive(id));
+  }
 
   constructor(scenario: Pick<LoadedScenario, "width" | "height" | "cells">) {
     this.width = scenario.width;
@@ -117,6 +139,7 @@ export class World {
       agents: Object.fromEntries([...this.agents.values()].map((a) => [a.id, { position: a.position }])),
       mailboxes: Object.fromEntries(this.mailboxes),
       state: this.state,
+      inactive: Object.fromEntries(this.inactive),
     });
   }
 }

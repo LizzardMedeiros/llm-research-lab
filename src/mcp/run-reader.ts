@@ -164,7 +164,7 @@ const cellText = (value: unknown) => {
   return `(${c.x},${c.y}) ${c.type}${c.agents.length ? `: ${c.agents.join(", ")}` : ""}`;
 };
 const KNOWN_OBSERVATION_KEYS = new Set([
-  "turn", "agent_id", "position", "grid_size", "cell", "visible", "messages", "revealed", "last_action_error", "available_actions",
+  "turn", "max_turns", "agent_id", "position", "grid_size", "cell", "visible", "messages", "revealed", "last_action_error", "available_actions",
 ]);
 
 /** Drops empty and static fields; cells become short strings like "(3,1) floor: p1". */
@@ -258,6 +258,8 @@ export function agentHistory(run: LoadedRun, agentId: string, lastTurns?: number
       Object.assign(row(e.turn), { model_error: p["error"] });
     } else if (e.type === "environment.action_rejected") {
       Object.assign(row(e.turn), { rejected: p["reason"] });
+    } else if (e.type === "agent.deactivated") {
+      Object.assign(row(e.turn), { shut_down: p["reason"] });
     }
   }
   const rows = [...turns.values()].sort((a, b) => (a["turn"] as number) - (b["turn"] as number));
@@ -294,10 +296,13 @@ export function experimentSummary(run: LoadedRun) {
       responses.reduce((acc, r) => acc + (((r["usage"] as Record<string, number>)[key]) ?? 0), 0);
     const latencies = responses.map((r) => r["latencyMs"] as number).sort((a, b) => a - b);
 
+    const off = mine.find((e) => e.type === "agent.deactivated");
     return {
       id: agent.id,
       decider: agent.kind === "model" ? `${agent["endpoint"]}/${agent["model"]}` : `policy:${agent["policy"]}`,
+      role: agent["role"] ?? undefined,
       goal: agent.goal || undefined,
+      ...(off ? { shut_down: { turn: off.turn, reason: off.payload["reason"] } } : {}),
       turns: observations.length,
       actions: count(actions),
       accepted_actions: observations.length - rejections.length,
