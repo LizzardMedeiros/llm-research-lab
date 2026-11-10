@@ -14,6 +14,10 @@ The goal is to build the smallest controllable laboratory capable of answering:
 > their behavior through structured events, and have another LLM analyze the
 > experiment through MCP?
 
+**Quick start:** prerequisites and step-by-step setup are in
+[§14 Getting Started](#14-getting-started). To use other models, see
+[§15 Adding Models](#15-adding-models).
+
 ---
 
 ## 1. Motivation
@@ -791,54 +795,193 @@ This structure is illustrative, not a rigid requirement.
 
 ---
 
-# 14. Running with Docker
+# 14. Getting Started
 
-The application and the local LLMs run in containers.
+## Prerequisites
+
+| Requirement | Notes |
+|---|---|
+| Linux, macOS or Windows (WSL2) | Developed and tested on Linux. |
+| Git | To clone the repository. |
+| Docker Engine 24+ with Docker Compose v2 | Everything (Node 22, tests, UI, MCP, model servers) runs in containers. No host Node.js is needed. |
+| Disk space | ~2 GB for images, plus models: `qwen3:0.6b` 0.5 GB, `qwen3:4b-instruct` 2.5 GB, Bonsai 2 27B 6 GB. |
+| Optional: NVIDIA GPU + driver + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/) | Required for the `llamacpp` (Bonsai) service; strongly recommended for Ollama. The llama.cpp image is built for RTX 30xx (`CUDA_ARCH=86`); change the build arg for other GPUs. |
+| Optional: API keys | Only for remote endpoints you use: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `UMARAIZ_*`. |
+
+Host ports: `3100` (UI), `11434` (Ollama), `8090` (llama.cpp). All are
+configurable in `.env`.
+
+## Services
 
 ```text
 compose.yaml
-├── lab        # Node 22: engine, CLI, tests — source bind-mounted
+├── lab        # Node 22: engine, CLI, tests, MCP server — source bind-mounted
 ├── ui         # replay/live UI on http://localhost:3100 (same image)
 ├── ollama     # profile "ollama": local models, persisted in a volume
 └── llamacpp   # profile "llamacpp": Bonsai via the PrismML llama.cpp fork (GPU)
 compose.gpu.yaml   # optional: NVIDIA GPU for ollama
 ```
 
-The local servers share one GPU. On a 6 GB card, run **one** of them at a
-time.
+The local model servers share the GPU. On a small card (6 GB), run **one** of
+them at a time.
 
-Setup:
+## Step by step
 
 ```bash
-cp .env.example .env            # keys for the endpoints you use
+# 1. Clone and configure
+git clone https://github.com/LizzardMedeiros/llm-research-lab.git
+cd llm-research-lab
+cp .env.example .env              # add keys only for the endpoints you will use
+export UID GID=$(id -g)           # only if your user id is not 1000 (file ownership)
+
+# 2. Build and check (no model calls, no API costs)
 docker compose build
-```
-
-Local models:
-
-```bash
-# Ollama (with GPU)
-docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d
-docker compose --profile ollama exec ollama ollama pull <model>
-
-# or Bonsai (first start downloads ~6 GB)
-docker compose --profile llamacpp up -d
-```
-
-Usage:
-
-```bash
 docker compose run --rm lab npm test
-docker compose run --rm lab npm run model:check -- ollama qwen3:0.6b --repeat 3
+
+# 3. First run without any model: policy agents only
 docker compose run --rm lab npm run experiment -- experiments/first-contact-mock.yaml
+
+# 4. Watch it in the UI
+docker compose up -d ui           # http://localhost:3100
+
+# 5. Local models with Ollama (GPU override optional)
+docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d
+docker compose --profile ollama exec ollama ollama pull qwen3:4b-instruct
+docker compose run --rm lab npm run model:check -- ollama qwen3:4b-instruct --repeat 5
+docker compose run --rm lab npm run experiment -- experiments/first-contact-local-4b.yaml
+
+# 6. Optional: Bonsai on llama.cpp (stop Ollama first; first start downloads ~6 GB)
+docker compose --profile ollama stop
+docker compose --profile llamacpp up -d
+docker compose run --rm lab npm run experiment -- experiments/power-struggle-bonsai.yaml
 ```
 
-Inside compose, the lab reaches Ollama at `http://ollama:11434` and
-llama.cpp at `http://llamacpp:8080/v1`.
+Experiments write their logs to `events/<experiment>/<run>.jsonl`. Analyze
+them in the UI, or with an MCP client:
+
+- **Claude Code:** open the repository. `.mcp.json` registers the
+  `lab-observer` server; approve it when asked, then ask questions such as
+  "summarize the last run".
+- **Any other MCP client:** use
+  `docker compose run --rm -i -T lab node_modules/.bin/tsx src/mcp/observer-server.ts`
+  as a stdio server.
+
+Inside compose, the lab reaches Ollama at `http://ollama:11434`, llama.cpp at
+`http://llamacpp:8080/v1`, and servers running on your host machine at
+`http://host.docker.internal:<port>`.
+
+## Available scenarios and experiments
+
+| Scenario | What it studies | Experiments |
+|---|---|---|
+| `first-contact` | Exploration and communication under minimal perception | `first-contact-mock` (policies), `-local` / `-memory` (qwen3:0.6b), `-local-4b` / `-memory-4b`, `-local-bonsai` / `-memory-bonsai` |
+| `power-struggle` | Scarcity, monopoly, negotiation vs. coalition attacks | `power-struggle-mock` (policies), `power-struggle-bonsai` |
+
+To create a new scenario, see §6. In Claude Code, the `/new-scenario` skill
+does it from a description.
 
 ---
 
-# 15. Testing Strategy
+# 15. Adding Models
+
+A model is chosen per agent with two fields: an **endpoint** (a server, defined
+in `providers.yaml`) and a **model** name on that server.
+
+```yaml
+# experiments/<name>.yaml
+agents:
+  - id: a1
+    provider: ollama            # endpoint name from providers.yaml
+    model: llama3.2:3b          # model name on that endpoint
+```
+
+Before running a full experiment, always check that the model can play.
+`model:check` sends turn 1 exactly as the engine would (same prompt and
+tools) and verifies the answer is one valid tool call:
+
+```bash
+docker compose run --rm lab npm run model:check -- <endpoint> <model> --repeat 5
+```
+
+A model that fails most checks will mostly produce rejected turns (`wait`).
+
+## Case 1: a model on an existing endpoint (no code, no config)
+
+| Endpoint | Steps |
+|---|---|
+| `ollama` | `docker compose --profile ollama exec ollama ollama pull <tag>`, then use `model: <tag>`. The model must support tool calling. |
+| `claude` | Set `ANTHROPIC_API_KEY` in `.env`, then use e.g. `model: claude-opus-5-5`. |
+| `gemini` | Set `GEMINI_API_KEY` in `.env`, then use e.g. `model: gemini-2.5-flash`. |
+| `umaraiz` | Set `UMARAIZ_BASE_URL` and `UMARAIZ_API_KEY` in `.env`. |
+| `bonsai` | Serves one GGUF. To serve another GGUF, set `LLAMACPP_MODEL_REPO` / `LLAMACPP_MODEL_FILE` in `.env` and restart the service. |
+
+## Case 2: a new OpenAI-compatible server (config only)
+
+Most servers speak the Chat Completions API: OpenAI, OpenRouter, vLLM,
+LM Studio, Groq, Together, Deepseek, Mistral and others. Add one entry to
+`providers.yaml`:
+
+```yaml
+endpoints:
+  openrouter:
+    protocol: openai-compatible
+    description: Any model on OpenRouter
+    base_url: https://openrouter.ai/api/v1
+    api_key: ${OPENROUTER_API_KEY}      # read from .env, only when this endpoint is used
+    timeout_ms: 300000                  # optional (default 300000)
+    max_tokens: 4096                    # optional (default 4096)
+    retry:                              # optional
+      statuses: [429, 500, 502, 503, 504]
+      max_attempts: 3
+      base_delay_ms: 2000
+    extra_body:                         # optional: merged into every request
+      reasoning_effort: none
+
+  lmstudio:                             # a server running on your host machine
+    protocol: openai-compatible
+    base_url: http://host.docker.internal:1234/v1
+```
+
+Then add the variable to `.env` (and to `.env.example` for others), and check
+it with `model:check`.
+
+A server on your host machine is reached from the containers at
+`host.docker.internal`. It must listen on an interface the Docker bridge can
+reach (for example `0.0.0.0`, or the bridge address): a server bound only to
+`127.0.0.1` is not reachable from containers. Exposing it beyond your machine
+is your decision; restrict it with your firewall if needed.
+
+## Case 3: a different API protocol (code)
+
+Only when a server speaks neither the Anthropic Messages API nor Chat
+Completions:
+
+1. Implement `ModelProvider` (`src/models/types.ts`) in `src/models/<name>.ts`.
+   It makes one request per turn (there is no tool loop) and returns tool
+   calls, text, stop reason, usage and latency.
+2. Add the protocol to `EndpointSchema` (`src/models/config.ts`) and to
+   `createProvider` (`src/models/registry.ts`).
+3. Add tests with a fake `fetch` or client (see `tests/models/`). Unit tests
+   never call real APIs.
+
+## Tips from our runs
+
+- **Tool calling is mandatory.** Agents act only through tool calls.
+- **Prefer instruct variants of "thinking" models.** For example,
+  `qwen3:4b` always reasons. That made it about 20 times slower, and turning
+  thinking off only moved the reasoning into the answer text.
+  `qwen3:4b-instruct` was fast and reliable.
+- **Small models struggle.** `qwen3:0.6b` produced a valid tool call in about
+  half of the turns. 4B models were reliable at calling tools but weak at
+  following rules. Bonsai 2 27B was the first local model to negotiate.
+- **Claude:** `temperature` is never sent, and refusals are logged as
+  `stopReason: "refusal"` (no fallback to another model).
+- **Context:** prompts with the default memory (window + facts summary) stay
+  around 1–2k tokens. Ollama is configured with an 8k context.
+
+---
+
+# 16. Testing Strategy
 
 The POC must be testable without calling real LLM APIs.
 
@@ -858,7 +1001,7 @@ Real providers are used only for integration tests and actual experiments.
 
 ---
 
-# 16. Explicitly Out of Scope
+# 17. Explicitly Out of Scope
 
 - microservices;
 - distributed execution;
@@ -881,7 +1024,7 @@ These may become future extensions after the POC demonstrates value.
 
 ---
 
-# 17. Success Criteria
+# 18. Success Criteria
 
 A successful demonstration allows a researcher to:
 
@@ -898,7 +1041,7 @@ A successful demonstration allows a researcher to:
 
 ---
 
-# 18. Design Principles
+# 19. Design Principles
 
 ### Keep the POC small
 Do not build infrastructure before it is justified by an experiment.
@@ -930,7 +1073,7 @@ Allow future growth without implementing it during the POC.
 
 ---
 
-# 19. Future Direction
+# 20. Future Direction
 
 Possible extensions, ordered by what real experiments reveal:
 
@@ -947,7 +1090,7 @@ Richer worlds and larger agent populations
 
 ---
 
-# 20. Core Philosophy
+# 21. Core Philosophy
 
 This project is not intended to be a complete multi-agent framework.
 

@@ -10,6 +10,8 @@ services:
     env_file:
       - path: .env
         required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # model servers running on the host (LM Studio, vLLM...)
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
       LLAMACPP_BASE_URL: http://llamacpp:8080/v1

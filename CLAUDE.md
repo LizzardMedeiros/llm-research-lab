@@ -122,7 +122,8 @@ spec; read it before architectural changes and keep it in sync with decisions.
   umaraiz, and others). Plus `policy` (rule-based agents) and `mock` (internal,
   engine unit tests only).
 - A new server or model is a `providers.yaml` entry, not a new adapter. Add a
-  protocol adapter only for a genuinely different wire protocol.
+  protocol adapter only for a genuinely different wire protocol. Keep README
+  §15 (Adding Models) and §14 (Getting Started) in sync with such changes.
 - Agents pick `provider: <endpoint>` and `model: <name>` independently.
 - One request per agent turn; tool results are never replayed, so adapters
   have no tool loop.
@@ -138,7 +139,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
 
 ## Scope guard
 
-Keep the POC small. Anything listed in README §16 (Out of Scope) needs explicit
+Keep the POC small. Anything listed in README §17 (Out of Scope) needs explicit
 user approval before implementation.
 
 ## Project Claude config
