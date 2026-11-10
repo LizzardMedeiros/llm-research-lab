@@ -121,6 +121,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
   marked as attempts; the video footer must name who wrote the narration.
 - `video/` is a separate package and image (HyperFrames 0.9.31, GSAP, ffmpeg,
   Chrome, Kokoro). Keep telemetry disabled; no HeyGen account or cloud render.
+- `video/DIRECTION.md` is the running log of video direction decisions (layout
+  modes, panel visibility, motion language, HyperFrames lessons, review
+  process). Follow it, and record every new adjustment there: it will become
+  a skill.
 
 ### Reasoning
 - Never claim to capture chain-of-thought. Model explanations are stored as

@@ -1019,10 +1019,24 @@ docker compose --profile video run --rm video \
   video.
 - **Generic:** scenes, board, per-agent state bars (any per-agent numeric
   `world.state`) and voices work for any scenario.
+- **Staging:** the board is a persistent stage with a camera.
+  - The camera is wide at each scene start, closes up on whoever speaks
+    (plus listeners), and on agents that shut down.
+  - Scene transitions are a turn-number wipe.
+  - The speaker's token pulses and listeners get a ring.
+  - Scenario actions pop up as callouts over the agent.
+  - A shutdown triggers a shake, a red flash and a stamp.
+  - State bars animate from their previous values; panels and dialogue
+    slide in and out.
+  - The outcome card is an animated chart of how long each agent stayed
+    running.
 - **Privacy and cost:** everything runs locally (Kokoro TTS, local Chrome).
   HyperFrames telemetry is disabled (`HYPERFRAMES_NO_TELEMETRY=1`,
   `DO_NOT_TRACK=1`). No HeyGen account is used.
 - **Speed:** a 2–3 minute video renders in about 35 s on CPU.
+- **Direction notes:** `video/DIRECTION.md` records the visual and
+  technical decisions (layout modes, when the state panel shows, motion
+  language, HyperFrames lessons, review process).
 
 ---
 
