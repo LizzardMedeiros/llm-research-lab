@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+.env.*
+
+# Generated experiment logs
+events/
+
+# Local Claude Code settings
+.claude/settings.local.json

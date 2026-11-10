@@ -1,0 +1,34 @@
+scenario: first-contact
+description: >
+  Five agents in a small walled grid with almost no perception: they only see
+  and hear agents in their own cell. Validates the lab end to end and observes
+  how agents explore, use observation, and communicate under scarce encounters.
+
+map: |
+  .....
+  .#...
+  .....
+  ...#.
+  .....
+
+legend:
+  ".": { type: floor }
+  "#": { type: wall, blocks_movement: true }
+
+spawn: random
+
+scheduling: simultaneous
+
+actions:
+  move:    { directions: cardinal }
+  speak:   { range: same_cell, delivery: next_turn }
+  observe: { reveals: neighbors_8 }
+  wait:    {}
+
+rules:
+  perception: { mode: same_cell }
+  occupancy:  { shared: true }
+  end:        { max_turns: 50 }
+
+memory:
+  window: 10

@@ -1,0 +1,30 @@
+# Smoke test for the first-contact scenario. No API calls.
+# All agents are policies chosen to exercise every standard action
+# and the rejection path.
+scenario: ../scenarios/first-contact/scenario.yaml
+seed: 12345
+
+agents:
+  - id: a1
+    provider: policy
+    policy: random
+    params: { actions: [move] }        # seeded random walk
+
+  - id: a2
+    provider: policy
+    policy: random                      # any enabled action
+
+  - id: a3
+    provider: policy
+    policy: repeat
+    params: { action: observe }
+
+  - id: a4
+    provider: policy
+    policy: ../policies/talker.ts       # custom: speak if someone is in my cell, else random move
+    goal: "Talk to anyone you meet."
+
+  - id: a5
+    provider: policy
+    policy: repeat
+    params: { action: move, args: { direction: north } }   # hits border/walls -> rejections
