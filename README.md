@@ -206,17 +206,45 @@ behavior gets a different name.
    module that overrides specific steps:
 
 ```ts
+// src/engine/scenario-rules.ts
 interface ScenarioRules {
-  actions?(): ActionDef[];                          // define new tools
-  observe?(agent: AgentState, world: World): Observation;
-  validate?(action: Action, agent: AgentState, world: World): ValidationResult;
-  apply?(actions: Action[], world: World, rng: Rng): Transition;
-  isFinished?(world: World, turn: number): boolean;
+  actions?(): CustomAction[];                                   // new tools
+  observe?(observation: Observation, agent: AgentState, world: World): Observation;
+  validate?(action: { name; args }, ctx): string | null;        // extra rejection rules
+  afterTurn?(world: World, rng: Rng, turn: number): void;       // world dynamics
+  isFinished?(world: World, turn: number): boolean;             // early end
+}
+
+interface CustomAction {
+  name: string;                  // must not be a standard action name
+  description: string;
+  inputSchema: JsonSchema;
+  validate?(args, ctx): string | null;
+  apply(args, ctx: { agent, world, turn, rng }): void;
 }
 ```
 
 Every hook is optional. A missing hook falls back to the built-in mechanic
 configured in YAML.
+
+Hooks may mutate the world only inside a custom action's `apply` and in
+`afterTurn`. Any new state (scores, inventories, roles) lives in
+`world.state`, which is part of every snapshot.
+
+## Turn resolution
+
+Each turn runs in batches: one batch with every agent (`simultaneous`), or one
+batch per agent in a seeded random order (`sequential`). Within a batch:
+
+1. every agent observes the state at the start of the batch;
+2. all agents decide in parallel;
+3. every call is validated and its effect computed against that same state;
+4. effects are applied together: moves first (resolving occupancy), then
+   speech, reveals and custom actions;
+5. rejections go to the agent's mailbox and appear in its next observation.
+
+Speech, `observe` reveals and rejection reasons are delivered in the
+recipient's next observation.
 
 ---
 
@@ -259,6 +287,13 @@ available actions
 ```
 
 The Agent does not depend on a specific LLM provider.
+
+Prompt per turn: the system prompt (scenario `prompt.system`, or the engine
+default) plus the goal, and **one** user message containing the memory window
+as a history block, then the current observation. Past turns are never
+replayed as assistant messages. That format teaches models to answer in text
+instead of calling a tool: with `qwen3:0.6b` it dropped valid tool calls from
+~53% to ~6% of turns.
 
 ## Model Provider
 
@@ -494,7 +529,8 @@ experiment.failed
 agent.observation
 agent.model_request
 agent.model_response
-agent.action
+agent.model_error         # provider failure; the turn becomes wait
+agent.action              # proposed call, with model-reported rationale if any
 
 environment.action_rejected
 environment.transition    # includes a full world snapshot

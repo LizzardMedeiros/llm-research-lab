@@ -70,6 +70,11 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - Agents never receive full world state — only what perception rules produce.
 - Agent goals are free text injected into the prompt; the environment does not
   verify them unless a scenario hook does.
+- Prompt: one user message per turn (history block + current observation).
+  Never replay past turns as assistant text messages: it trains models to
+  stop calling tools (measured, README §5).
+- Hooks (`src/engine/scenario-rules.ts`) mutate the world only in custom
+  action `apply` and `afterTurn`; new state goes in `world.state`.
 
 ### Events and observation
 - The event log is the single source of truth for UI and MCP.

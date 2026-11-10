@@ -41,8 +41,8 @@ secrecy), create a new action with a new name in the `actions()` hook.
 For every rule, decide:
 
 - **Built-in mechanic (YAML):** the rule is a parameter of an existing mechanic.
-  The source of truth for available mechanics and parameters is `src/mechanics/`.
-  If that code does not exist yet, use the vocabulary in README §6.
+  The source of truth for available parameters is the zod schema in
+  `src/config/scenario.ts` and the standard actions in `src/actions/standard.ts`.
 - **Hook (`rules.ts`):** the rule is specific to this scenario and cannot be
   expressed by parameters (e.g. resource scoring, voting, secret roles).
 
@@ -104,23 +104,20 @@ memory:
 import type { ScenarioRules } from "../../src/engine/scenario-rules";
 
 const rules: ScenarioRules = {
-  // actions() { return [...]; },                  // new tools: name, description, JSON schema params
-  // observe(agent, world) { ... },                // what the agent sees
-  // validate(action, agent, world) { ... },       // return { ok: false, reason } to reject
-  // apply(actions, world, rng) { ... },           // resolve actions into a transition
-  // isFinished(world, turn) { ... },
+  // actions() { return [{ name, description, inputSchema, validate?, apply }]; }, // new tools
+  // observe(observation, agent, world) { return { ...observation, extra }; },    // what the agent sees
+  // validate({ name, args }, ctx) { return "reason" or null; },                   // extra rejections
+  // afterTurn(world, rng, turn) { ... },                                          // world dynamics
+  // isFinished(world, turn) { return false; },                                    // early end
 };
 
 export default rules;
 ```
 
-If `src/engine/scenario-rules.ts` does not exist yet, write the hooks against
-the interface in README §4 and mention it in the summary.
-
 Hook rules:
 - Use only the `rng` argument for randomness. Never use `Math.random()`, `Date`
   or I/O.
-- Never mutate `world` outside `apply`. Return transitions; don't edit state in place elsewhere.
+- Mutate the world only inside a custom action's `apply` or in `afterTurn`.
 - Rejections must carry a human-readable `reason`, because it goes to the agent
   and to the event log.
 - Any new world state a hook introduces (scores, inventories, roles) must be
@@ -141,8 +138,8 @@ Check before finishing:
 - [ ] No scenario-specific code was added outside `scenarios/<name>/`.
 - [ ] Hidden information (roles, secrets) is only exposed through `observe`.
 
-If the engine exists, load the scenario with the config validator, or run it
-with mock agents.
+Run the smoke-test experiment (step 5), which validates the scenario and hooks before turn 1:
+`docker compose run --rm lab npm run experiment -- experiments/<kebab-name>-mock.yaml --quiet`
 
 ## 5. Optional: smoke-test experiment
 

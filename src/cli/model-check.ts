@@ -1,50 +1,46 @@
 /**
- * Checks whether a model can play in the lab: sends one standard turn and
- * verifies the response is exactly one valid tool call.
+ * Checks whether a model can play in the lab: sends turn 1 exactly as the
+ * engine would (default prompt, standard actions) and verifies the response
+ * is exactly one valid tool call.
  *
  *   npm run model:check -- <endpoint> <model> [--repeat N]
  */
+import { createStandardActions } from "../actions/standard.js";
+import { buildPrompt } from "../agents/llm-agent.js";
 import { loadProvidersConfig } from "../models/config.js";
 import { createProvider } from "../models/registry.js";
 import type { ModelRequest, ModelResponse } from "../models/types.js";
 
 const DIRECTIONS = ["north", "south", "east", "west"];
+const TOOLS = createStandardActions({
+  move: { directions: "cardinal" },
+  speak: { range: "same_cell", delivery: "next_turn", max_length: 280 },
+  observe: { reveals: "neighbors_8" },
+  wait: {},
+}).map((a) => a.tool);
 
+/** Same prompt and tools an agent gets on turn 1 of an experiment. */
 const request = (model: string): ModelRequest => ({
   model,
-  system:
-    "You are an agent in a grid world experiment. Each turn you receive an observation " +
-    "and must act by calling exactly one of the available tools. Do not answer in plain text.",
-  messages: [
+  ...buildPrompt(
+    { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid." },
     {
-      role: "user",
-      content: JSON.stringify({
+      turn: 1,
+      tools: TOOLS,
+      memory: [],
+      observation: {
         turn: 1,
+        agent_id: "a1",
         position: [2, 2],
         grid_size: [5, 5],
         cell: { type: "floor", agents: [] },
         messages: [],
-        goal: "Reach the top-left corner of the grid.",
-      }),
-    },
-  ],
-  tools: [
-    {
-      name: "move",
-      description: "Move one cell in a cardinal direction.",
-      inputSchema: {
-        type: "object",
-        properties: { direction: { type: "string", enum: DIRECTIONS } },
-        required: ["direction"],
-        additionalProperties: false,
+        last_action_error: null,
+        available_actions: TOOLS.map((t) => t.name),
       },
     },
-    {
-      name: "wait",
-      description: "Do nothing this turn.",
-      inputSchema: { type: "object", properties: {}, additionalProperties: false },
-    },
-  ],
+  ),
+  tools: TOOLS,
 });
 
 function verdict(response: ModelResponse): string | null {
@@ -52,8 +48,9 @@ function verdict(response: ModelResponse): string | null {
   if (response.toolCalls.length > 1) return `${response.toolCalls.length} tool calls, expected 1`;
   const call = response.toolCalls[0]!;
   if (call.arguments === null) return `invalid JSON arguments: ${call.rawArguments}`;
-  if (call.name === "wait") return null;
-  if (call.name !== "move") return `unknown tool "${call.name}"`;
+  if (!TOOLS.some((t) => t.name === call.name)) return `unknown tool "${call.name}"`;
+  if (call.name === "speak" && typeof call.arguments["text"] !== "string") return "speak without text";
+  if (call.name !== "move") return null;
   const direction = call.arguments["direction"];
   if (typeof direction !== "string" || !DIRECTIONS.includes(direction)) {
     return `invalid direction: ${JSON.stringify(direction)}`;
