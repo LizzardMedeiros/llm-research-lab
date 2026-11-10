@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "lab-observer": {
+      "command": "docker",
+      "args": ["compose", "run", "--rm", "-i", "-T", "lab", "node_modules/.bin/tsx", "src/mcp/observer-server.ts"]
+    }
+  }
+}

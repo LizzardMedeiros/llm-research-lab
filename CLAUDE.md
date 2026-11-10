@@ -22,6 +22,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `npm run experiment -- <experiment.yaml>` — run an experiment
   - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
     produces valid tool calls (calls the real model)
+  - `npm run mcp` — observer MCP server on stdio (`LAB_EVENTS_DIR`, default `events`)
 - Local model servers:
   - `docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d`
   - `docker compose --profile ollama exec ollama ollama pull <model>`
@@ -81,7 +82,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - `environment.transition` carries a full world snapshot; a run must be
   reconstructable from the JSONL alone.
 - Do not change the event envelope without updating README §8.
-- MCP server: separate stdio process, read-only over `events/**/*.jsonl`.
+- MCP server (`src/mcp/`): separate stdio process, read-only over
+  `events/**/*.jsonl`. Derive everything from events (`run-reader.ts`, pure
+  functions); never import engine state. Registered for Claude Code in
+  `.mcp.json` as `lab-observer` (runs in the `lab` container).
 - The Observer is an external MCP client; no observer loop in the POC.
 - UI: SSE, observe-only.
 
@@ -119,4 +123,4 @@ user approval before implementation.
 
 - `.claude/skills/` — project skills (workflows such as creating a scenario).
 - `.claude/agents/` — project subagents.
-- `.mcp.json` (repo root, when created) — MCP servers, e.g. the lab's observer server.
+- `.mcp.json` — MCP servers for Claude Code: `lab-observer` (read-only run analysis).

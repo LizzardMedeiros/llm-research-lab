@@ -585,14 +585,26 @@ Desktop, …). The lab provides the MCP server, not an observer loop.
 The MCP server is a separate process that reads JSONL. It works both while a
 run is in progress (tailing the file) and after it has finished.
 
-Initial MCP tools:
+MCP tools (all read-only). `run` is `"<experiment_id>/<run_id>"`, or just
+`"<experiment_id>"` for its latest run; omitted, it means the most recent run.
 
-```text
-list_runs()
-get_experiment_state(run_id)
-get_recent_events(run_id, limit)
-get_agent_history(run_id, agent_id)
-get_experiment_summary(run_id)
+| Tool | Returns |
+|---|---|
+| `list_runs(limit?)` | Runs, most recent first, with status (`running`, `finished`, `failed`) and progress |
+| `get_experiment_state(run?)` | Status, scenario rules, agents (model or policy, goal), world grid with positions |
+| `get_recent_events(run?, limit?, types?, agent_id?, since_turn?)` | Latest events in compact form, filtered |
+| `get_agent_history(run?, agent_id, last_turns?)` | Per turn: position, cellmates, what was heard or revealed, action, rationale, rejection, latency |
+| `get_experiment_summary(run?)` | Per agent: actions, accepted vs rejected by reason, cells visited, encounters, speech, and for models the tool-call rate, latency and tokens |
+
+A run with no terminal event is reported as `running`. A partial last line,
+still being written, is ignored.
+
+Connecting: `.mcp.json` at the repo root registers the server as
+`lab-observer` for Claude Code. It runs inside the `lab` container over
+stdio. Any other MCP client can use the same command:
+
+```bash
+docker compose run --rm -i -T lab node_modules/.bin/tsx src/mcp/observer-server.ts
 ```
 
 Example interaction:

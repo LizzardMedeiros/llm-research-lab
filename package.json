@@ -7,11 +7,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc",
-    "model:check": "tsx src/cli/model-check.ts"
+    "model:check": "tsx src/cli/model-check.ts",
+    "mcp": "tsx src/mcp/observer-server.ts"
   },
   "license": "ISC",
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
