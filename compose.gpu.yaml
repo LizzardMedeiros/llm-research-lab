@@ -1,0 +1,12 @@
+# NVIDIA GPU for Ollama. Enable with:
+#   docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d
+# or set COMPOSE_FILE=compose.yaml:compose.gpu.yaml in .env
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

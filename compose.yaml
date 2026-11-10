@@ -1,0 +1,71 @@
+# Local model servers share one GPU (6 GB): run ONE of them at a time.
+#   docker compose --profile ollama up -d      # Ollama
+#   docker compose --profile llamacpp up -d    # Bonsai (llama.cpp, PrismML fork)
+services:
+  lab:
+    build: .
+    image: llm-research-lab
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      LLAMACPP_BASE_URL: http://llamacpp:8080/v1
+    volumes:
+      - .:/app                 # live source for development
+      - node_modules:/app/node_modules
+    ports:
+      - "${LAB_PORT:-3000}:3000"   # UI (SSE), when implemented
+    command: ["npm", "test"]
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: ["ollama"]
+    restart: unless-stopped
+    environment:
+      # Quantized KV cache (needs flash attention): half the VRAM of f16.
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_CONTEXT_LENGTH: "8192"
+      OLLAMA_KEEP_ALIVE: 10m
+    volumes:
+      - ollama:/root/.ollama
+    ports:
+      - "${OLLAMA_PORT:-11434}:11434"
+
+  # Ternary Bonsai 2 27B (PTQ1_0) — formats only supported by the PrismML
+  # llama.cpp fork. First start downloads the GGUF (~6 GB) into the volume.
+  # Change MODEL_REPO / MODEL_FILE in .env to serve another GGUF.
+  llamacpp:
+    build: ./llamacpp
+    profiles: ["llamacpp"]
+    restart: unless-stopped
+    environment:
+      MODEL_REPO: ${LLAMACPP_MODEL_REPO:-prism-ml/Ternary-Bonsai-2-27B-gguf}
+      MODEL_FILE: ${LLAMACPP_MODEL_FILE:-Ternary-Bonsai-2-27B-PTQ1_0.gguf}
+      CTX_SIZE: "8192"
+      FIT_TARGET_MIB: "256"
+    volumes:
+      - llamacpp_models:/models
+    ports:
+      - "${LLAMACPP_PORT:-8090}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15m
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  node_modules:
+  ollama:
+  llamacpp_models:

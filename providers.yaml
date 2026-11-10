@@ -1,0 +1,51 @@
+# Model endpoints available to experiments.
+#
+# An experiment agent references an endpoint by name and picks the model
+# independently:
+#
+#   - id: a1
+#     provider: ollama
+#     model: qwen3:8b
+#
+# Protocols: anthropic | openai-compatible
+# Strings accept ${VAR} and ${VAR:-default}; env vars are only required for
+# the endpoints an experiment actually uses.
+
+endpoints:
+  claude:
+    protocol: anthropic
+    description: Claude models via the official Anthropic SDK
+    api_key: ${ANTHROPIC_API_KEY:-}   # empty -> SDK default credential resolution
+    max_tokens: 16000
+    # extra_body: { output_config: { effort: low } }
+
+  ollama:
+    protocol: openai-compatible
+    description: Local models served by the `ollama` compose service
+    base_url: ${OLLAMA_BASE_URL:-http://ollama:11434}/v1
+
+  bonsai:
+    protocol: openai-compatible
+    description: Ternary Bonsai 2 27B on the `llamacpp` compose service (PrismML llama.cpp fork)
+    base_url: ${LLAMACPP_BASE_URL:-http://llamacpp:8080/v1}
+    timeout_ms: 900000              # ~5.8 tok/s on a 6 GB RTX 3050
+    extra_body:
+      reasoning_effort: none        # requires llama-server --reasoning auto
+
+  gemini:
+    protocol: openai-compatible
+    description: Gemini via Google's OpenAI-compatible endpoint
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    api_key: ${GEMINI_API_KEY}
+
+  umaraiz:
+    protocol: openai-compatible
+    description: Hosted OpenAI-compatible gateway (reasoning model)
+    base_url: ${UMARAIZ_BASE_URL}
+    api_key: ${UMARAIZ_API_KEY}
+    max_tokens: 8192                # reasoning shares the output budget
+    timeout_ms: 600000
+    retry:                          # 524 = transient gateway timeout
+      statuses: [408, 429, 500, 502, 503, 504, 524]
+      max_attempts: 5
+      base_delay_ms: 5000

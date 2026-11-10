@@ -9,7 +9,27 @@ spec; read it before architectural changes and keep it in sync with decisions.
   messages, docs and YAML keys are in English.
 - Stack: TypeScript (Node). Tests run with the mock provider only — never call
   real LLM APIs in unit tests.
-- Commands: _not defined yet — fill in once `package.json` exists._
+- Runtime: everything runs in Docker (Node 22 image). The host Node is not
+  used. Services in `compose.yaml`: `lab` (app, source bind-mounted), and the
+  local model servers `ollama` and `llamacpp` (Bonsai), each behind a profile
+  of the same name. They share a 6 GB GPU: run only one at a time.
+  `compose.gpu.yaml` enables the GPU for Ollama; llamacpp always uses it.
+  Secrets come from `.env` (see `.env.example`); never commit `.env`.
+- Commands (prefix with `docker compose run --rm lab`):
+  - `npm test` — run tests (vitest)
+  - `npm run test:watch` — tests in watch mode
+  - `npm run typecheck` — `tsc` (strict, no emit)
+  - `npm run experiment -- <experiment.yaml>` — run an experiment
+  - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
+    produces valid tool calls (calls the real model)
+- Local model servers:
+  - `docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d`
+  - `docker compose --profile ollama exec ollama ollama pull <model>`
+  - `docker compose --profile llamacpp up -d` (downloads ~6 GB on first start)
+- Adding a dependency: `docker compose run --rm --no-deps lab npm install <pkg>`
+  so the lockfile is resolved on Node 22, then `docker compose build lab`.
+- ESM (`"type": "module"`, NodeNext): relative imports use the `.js` extension.
+- Config files are parsed with `yaml` and validated with `zod`.
 
 ## Business rules (non-negotiable)
 
@@ -65,9 +85,20 @@ spec; read it before architectural changes and keep it in sync with decisions.
   `rationale: { type: "model_reported", content }`.
 
 ### Providers and policies
-- POC providers: `anthropic` (official SDK), `ollama` (native API), `policy`
-  (rule-based agents), `mock` (internal, engine unit tests only).
-- Agent code must not import a provider SDK directly.
+- Protocols (code, `src/models/`) are separate from endpoints (config,
+  `providers.yaml`). Protocols: `anthropic` (official SDK) and
+  `openai-compatible` (`fetch`, covers Ollama /v1, llama.cpp/Bonsai, Gemini,
+  umaraiz, and others). Plus `policy` (rule-based agents) and `mock` (internal,
+  engine unit tests only).
+- A new server or model is a `providers.yaml` entry, not a new adapter. Add a
+  protocol adapter only for a genuinely different wire protocol.
+- Agents pick `provider: <endpoint>` and `model: <name>` independently.
+- One request per agent turn; tool results are never replayed, so adapters
+  have no tool loop.
+- Claude: never send `temperature` (current API rejects it); `tool_choice`
+  stays `auto`; no server-side refusal fallback (it would break per-agent
+  model attribution). Refusals are logged as `stopReason: "refusal"`.
+- Agent and engine code must not import a provider SDK directly.
 - Built-in policies (`random`, `repeat`, `scripted`) in `src/policies/` must be
   scenario-agnostic: they only use the tools offered in the observation.
 - Policies that read the observation are custom TS: `policies/` if reusable,
@@ -76,7 +107,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
 
 ## Scope guard
 
-Keep the POC small. Anything listed in README §15 (Out of Scope) needs explicit
+Keep the POC small. Anything listed in README §16 (Out of Scope) needs explicit
 user approval before implementation.
 
 ## Project Claude config

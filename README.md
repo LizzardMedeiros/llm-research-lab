@@ -69,17 +69,20 @@ Support approximately five simultaneous agents.
 
 Agents can use different providers without changing the experiment engine.
 
-POC providers:
+Endpoints available in the POC (`providers.yaml`):
 
 ```text
-anthropic  → Claude models via the official SDK
-ollama     → local models via the native Ollama API
-policy     → rule-based agents (no LLM): tests, baselines, control groups
-mock       → internal, for engine unit tests
+claude   → Claude models (Anthropic SDK)
+ollama   → local models (Ollama, OpenAI-compatible /v1)
+bonsai   → Ternary Bonsai 2 27B (llama.cpp, PrismML fork)
+gemini   → Gemini (Google's OpenAI-compatible endpoint)
+umaraiz  → hosted OpenAI-compatible gateway
+policy   → rule-based agents (no LLM): tests, baselines, control groups
+mock     → internal, for engine unit tests
 ```
 
-Other providers (OpenAI, Deepseek, OpenAI-compatible endpoints, …) are future
-additions behind the same interface.
+Any other OpenAI-compatible server (OpenAI, Deepseek, vLLM, OpenRouter, …) is
+one entry in `providers.yaml`, with no code change (see §5).
 
 ### 4. Structured Observability
 
@@ -118,9 +121,12 @@ The POC uses a modular monolithic architecture.
                  ┌───────────────────┼──────────────────┐
                  ▼                   ▼                  ▼
            LLM Providers       Scenario files      Event Log
-           ├─ Anthropic        (YAML + TS hooks)   (JSONL)
-           ├─ Ollama                                    │
-           └─ Mock                                      ▼
+           ├─ anthropic        (YAML + TS hooks)   (JSONL)
+           ├─ openai-compatible                         │
+           │  (ollama, bonsai,                          │
+           │   gemini, umaraiz)                         │
+           ├─ policy                                    │
+           └─ mock                                      ▼
                                               MCP Server (stdio,
                                               read-only, separate
                                               process)
@@ -256,16 +262,60 @@ The Agent does not depend on a specific LLM provider.
 
 ## Model Provider
 
+The provider layer separates **protocols** (code) from **endpoints**
+(configuration), so testing a new model or server needs no code change.
+
 ```text
-Agent
+Agent ── provider: <endpoint>, model: <name>
    │
    ▼
-ModelProvider
-   ├── Anthropic
-   ├── Ollama
-   ├── Policy  (rule-based, no LLM)
-   ├── Mock    (internal, engine unit tests)
-   └── Future providers
+providers.yaml  (named endpoints: base_url, api_key, timeouts, retry, extra_body)
+   │
+   ▼
+Protocol adapters (src/models/)
+   ├── anthropic           Claude, official SDK
+   ├── openai-compatible   Ollama /v1, llama.cpp, Gemini, umaraiz, vLLM, OpenRouter, ...
+   ├── policy              rule-based agents (no LLM)
+   └── mock                internal, engine unit tests
+```
+
+```yaml
+# providers.yaml (excerpt)
+endpoints:
+  ollama:
+    protocol: openai-compatible
+    base_url: ${OLLAMA_BASE_URL:-http://ollama:11434}/v1
+  bonsai:
+    protocol: openai-compatible
+    base_url: ${LLAMACPP_BASE_URL:-http://llamacpp:8080/v1}
+    extra_body: { reasoning_effort: none }
+```
+
+Interface: one request per agent turn.
+
+```ts
+interface ModelProvider {
+  complete(req: { model; system; messages; tools; temperature?; maxTokens? }):
+    Promise<{ toolCalls; text; stopReason; usage; latencyMs; servedModel? }>;
+}
+```
+
+- The model is chosen per agent, so one experiment can compare several models
+  of the same endpoint.
+- Tool results are never replayed within a turn, so adapters have no tool
+  loop. Requests use the most conservative shape: exactly one leading system
+  message, and empty tool arguments are read as `{}`.
+- Each endpoint has its own retry policy (e.g. the 524 gateway timeouts on
+  umaraiz). Endpoint env vars are resolved only when the endpoint is used.
+- Claude: `temperature` is never sent and there is no server-side refusal
+  fallback. A fallback would answer with a different model and break
+  per-agent attribution; refusals are logged with `stopReason: "refusal"`.
+
+Check whether a model can play in the lab (valid tool calls, latency,
+tokens):
+
+```bash
+npm run model:check -- <endpoint> <model> [--repeat N]
 ```
 
 ## Policy
@@ -379,13 +429,13 @@ seed: 12345
 
 agents:
   - id: a1
-    provider: anthropic
-    model: claude-sonnet-5-5
+    provider: claude          # endpoint name from providers.yaml
+    model: claude-opus-5-5
     goal: "Find another agent and learn what their goal is."
 
   - id: a2
     provider: ollama
-    model: <local-model>
+    model: qwen3:8b
     goal: "..."
 
   - id: a3
@@ -609,7 +659,8 @@ src/
 ├── actions/         # standard actions: move, speak, observe, wait
 ├── mechanics/       # built-in parameterized rules (perception, occupancy, ...)
 ├── agents/          # agent, memory window, prompt building
-├── models/          # provider interface, anthropic, ollama, policy, mock
+├── models/          # provider interface, protocol adapters, registry, mock
+├── cli/             # experiment runner, model:check
 ├── policies/        # built-in policies: random, repeat, scripted
 ├── events/          # event schema, JSONL store
 ├── config/          # YAML loading and validation
@@ -628,6 +679,9 @@ experiments/
 ├── first-contact-001.yaml
 └── first-contact-mock.yaml
 
+providers.yaml        # model endpoints
+llamacpp/             # llama.cpp (PrismML fork) image for Bonsai
+
 events/
 tests/
 ```
@@ -636,7 +690,53 @@ This structure is illustrative, not a rigid requirement.
 
 ---
 
-# 14. Testing Strategy
+# 14. Running with Docker
+
+The application and the local LLMs run in containers.
+
+```text
+compose.yaml
+├── lab        # Node 22: engine, CLI, tests, UI (SSE) — source bind-mounted
+├── ollama     # profile "ollama": local models, persisted in a volume
+└── llamacpp   # profile "llamacpp": Bonsai via the PrismML llama.cpp fork (GPU)
+compose.gpu.yaml   # optional: NVIDIA GPU for ollama
+```
+
+The local servers share one GPU. On a 6 GB card, run **one** of them at a
+time.
+
+Setup:
+
+```bash
+cp .env.example .env            # keys for the endpoints you use
+docker compose build
+```
+
+Local models:
+
+```bash
+# Ollama (with GPU)
+docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d
+docker compose --profile ollama exec ollama ollama pull <model>
+
+# or Bonsai (first start downloads ~6 GB)
+docker compose --profile llamacpp up -d
+```
+
+Usage:
+
+```bash
+docker compose run --rm lab npm test
+docker compose run --rm lab npm run model:check -- ollama qwen3:0.6b --repeat 3
+docker compose run --rm lab npm run experiment -- experiments/first-contact-mock.yaml
+```
+
+Inside compose, the lab reaches Ollama at `http://ollama:11434` and
+llama.cpp at `http://llamacpp:8080/v1`.
+
+---
+
+# 15. Testing Strategy
 
 The POC must be testable without calling real LLM APIs.
 
@@ -656,7 +756,7 @@ Real providers are used only for integration tests and actual experiments.
 
 ---
 
-# 15. Explicitly Out of Scope
+# 16. Explicitly Out of Scope
 
 - microservices;
 - distributed execution;
@@ -680,7 +780,7 @@ These may become future extensions after the POC demonstrates value.
 
 ---
 
-# 16. Success Criteria
+# 17. Success Criteria
 
 A successful demonstration allows a researcher to:
 
@@ -697,7 +797,7 @@ A successful demonstration allows a researcher to:
 
 ---
 
-# 17. Design Principles
+# 18. Design Principles
 
 ### Keep the POC small
 Do not build infrastructure before it is justified by an experiment.
@@ -729,12 +829,12 @@ Allow future growth without implementing it during the POC.
 
 ---
 
-# 18. Future Direction
+# 19. Future Direction
 
 Possible extensions, ordered by what real experiments reveal:
 
 ```text
-More providers (OpenAI, OpenAI-compatible)
+Model comparison runs (same scenario and seed, one model per run)
 Built-in observer loop with analyses recorded as events
 Advanced observability (OpenTelemetry, tracing, metrics)
 Advanced research UI and replay
@@ -746,7 +846,7 @@ Richer worlds and larger agent populations
 
 ---
 
-# 19. Core Philosophy
+# 20. Core Philosophy
 
 This project is not intended to be a complete multi-agent framework.
 

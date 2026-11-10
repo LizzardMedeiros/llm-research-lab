@@ -1,0 +1,7 @@
+node_modules
+dist
+events
+.git
+.env
+.env.*
+!.env.example
