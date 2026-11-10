@@ -1,3 +1,4 @@
+import type { ArgsValidator } from "../actions/args.js";
 import { describeEffect, type ActionDefinition, type Effect } from "../actions/types.js";
 import type { Decider, MemoryEntry } from "../agents/types.js";
 import type { LoadedScenario, Position } from "../config/scenario.js";
@@ -17,6 +18,8 @@ export interface EngineOptions {
   world: World;
   agents: EngineAgent[];
   actions: ActionDefinition[];
+  /** Schema validators per action name (see compileArgsValidators). */
+  argValidators: Map<string, ArgsValidator>;
   rules: ScenarioRules;
   /** Environment stream (scheduling order, custom actions, hooks). */
   rng: Rng;
@@ -42,12 +45,12 @@ interface Pending {
  * and `rules` hooks.
  */
 export class Engine {
-  private readonly memory = new Map<string, MemoryEntry[]>();
+  private readonly history = new Map<string, MemoryEntry[]>();
   private readonly actionsByName: Map<string, ActionDefinition>;
 
   constructor(private readonly options: EngineOptions) {
     this.actionsByName = new Map(options.actions.map((a) => [a.name, a]));
-    for (const agent of options.agents) this.memory.set(agent.id, []);
+    for (const agent of options.agents) this.history.set(agent.id, []);
   }
 
   async run(): Promise<RunResult> {
@@ -69,7 +72,6 @@ export class Engine {
     const { world, log, rules, scenario } = this.options;
     const tools = this.options.actions.map((a) => a.tool);
     const actionNames = this.options.actions.map((a) => a.name);
-    const window = scenario.config.memory.window;
 
     // 1. Observations, all from the state at the start of the batch.
     const observations = batch.map((agent) => {
@@ -86,7 +88,7 @@ export class Engine {
           turn,
           observation: observations[i]!,
           tools,
-          memory: window > 0 ? this.memory.get(agent.id)!.slice(-window) : [],
+          history: [...this.history.get(agent.id)!],
         }),
       ),
     );
@@ -131,9 +133,7 @@ export class Engine {
         world.mailbox(entry.agentId).lastActionError = entry.rejected;
         log.emit("environment.action_rejected", turn, { reason: entry.rejected, proposed: entry.action }, entry.agentId);
       }
-      const memory = this.memory.get(entry.agentId)!;
-      memory.push({ turn, observation: entry.observation, action: entry.action, rejected: entry.rejected });
-      if (memory.length > Math.max(window, 1)) memory.shift();
+      this.history.get(entry.agentId)!.push({ turn, observation: entry.observation, action: entry.action, rejected: entry.rejected });
     }
 
     log.emit("environment.transition", turn, {
@@ -153,6 +153,8 @@ export class Engine {
     const definition = this.actionsByName.get(call.name);
     if (!definition) return `unknown action "${call.name}"`;
     if (call.args === null) return `invalid arguments for "${call.name}" (not a JSON object)`;
+    const schemaError = this.options.argValidators.get(call.name)?.(call.args);
+    if (schemaError) return `${call.name}: ${schemaError}`;
     const { world, rules } = this.options;
     const ctx = { agent: world.agent(agentId), world, turn };
     return definition.validate(call.args, ctx) ?? rules.validate?.({ name: call.name, args: call.args }, ctx) ?? null;

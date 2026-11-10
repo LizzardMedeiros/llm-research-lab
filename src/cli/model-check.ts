@@ -23,16 +23,16 @@ const TOOLS = createStandardActions({
 const request = (model: string): ModelRequest => ({
   model,
   ...buildPrompt(
-    { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid." },
+    { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid.", memory: { window: 0, summary: "none" } },
     {
       turn: 1,
       tools: TOOLS,
-      memory: [],
+      history: [],
       observation: {
         turn: 1,
         agent_id: "a1",
-        position: [2, 2],
-        grid_size: [5, 5],
+        position: { x: 2, y: 2 },
+        grid_size: { width: 5, height: 5 },
         cell: { type: "floor", agents: [] },
         messages: [],
         last_action_error: null,

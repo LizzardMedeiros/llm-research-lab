@@ -37,8 +37,9 @@ export class PolicyAgent implements Decider {
     private readonly params: Record<string, unknown>,
     private readonly rng: Rng,
     ref: string,
+    private readonly window: number,
   ) {
-    this.describe = { kind: "policy", policy: ref, params };
+    this.describe = { kind: "policy", policy: ref, params, memory: { window } };
   }
 
   async decide(input: DecisionInput): Promise<Decision> {
@@ -48,7 +49,7 @@ export class PolicyAgent implements Decider {
         turn: input.turn,
         observation: input.observation,
         tools: input.tools,
-        memory: input.memory,
+        memory: this.window > 0 ? input.history.slice(-this.window) : [],
         params: this.params,
         rng: this.rng,
       });

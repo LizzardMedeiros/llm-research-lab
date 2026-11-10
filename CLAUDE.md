@@ -47,8 +47,13 @@ spec; read it before architectural changes and keep it in sync with decisions.
     different behavior gets a new action name via the `actions()` hook;
   - policy agents (`provider: policy`) get the same observation and tools as
     LLM agents; the engine must not special-case them;
+  - call arguments are validated against the tool's JSON Schema (`ajv`,
+    `src/actions/args.ts`) before the action's own `validate`; extra, missing
+    or mistyped arguments are rejections, not silently ignored;
   - rejected actions become `wait`, emit `environment.action_rejected` with a
     reason, and the reason appears in the agent's next observation;
+  - observations use explicit coordinates (`position: {x, y}`,
+    `grid_size: {width, height}`, cells `{x, y, type, agents}`), never bare pairs;
   - stable event envelope persisted as JSONL;
   - single `ModelProvider` interface;
   - all environment randomness comes from the seeded RNG — never `Math.random()`;
@@ -71,7 +76,13 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - Agents never receive full world state — only what perception rules produce.
 - Agent goals are free text injected into the prompt; the environment does not
   verify them unless a scenario hook does.
-- Prompt: one user message per turn (history block + current observation).
+- Prompt: one user message per turn (optional summary + history block +
+  current observation). Memory = scenario `memory` ({window, summary}),
+  overridable per agent in the experiment.
+- `summary: facts` (`src/agents/memory-summary.ts`) is built only from the
+  agent's own observations (never world state) and states facts, never
+  advice. A model-written summary is not implemented; if added, it must not
+  absorb unreliable turns (war-game finding: hallucinations become permanent).
   Never replay past turns as assistant text messages: it trains models to
   stop calling tools (measured, README §5).
 - Hooks (`src/engine/scenario-rules.ts`) mutate the world only in custom
@@ -85,7 +96,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - MCP server (`src/mcp/`): separate stdio process, read-only over
   `events/**/*.jsonl`. Derive everything from events (`run-reader.ts`, pure
   functions); never import engine state. Registered for Claude Code in
-  `.mcp.json` as `lab-observer` (runs in the `lab` container).
+  `.mcp.json` as `lab-observer` (runs in the `lab` container). The reader must
+  keep accepting older log formats (e.g. `[x, y]` positions): logs are
+  permanent records. After changing `src/mcp/`, reconnect the server (`/mcp`)
+  — a running instance keeps the old code.
 - The Observer is an external MCP client; no observer loop in the POC.
 - UI: SSE, observe-only.
 

@@ -1,3 +1,4 @@
+import { compileArgsValidators } from "../actions/args.js";
 import { createStandardActions } from "../actions/standard.js";
 import { LlmAgent } from "../agents/llm-agent.js";
 import type { Decider } from "../agents/types.js";
@@ -61,6 +62,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   ];
   const actionNames = new Set(actions.map((a) => a.name));
   if (actionNames.size !== actions.length) throw new ConfigError("Duplicate action names in scenario");
+  const argValidators = compileArgsValidators(actions);
 
   const root = createRng(experiment.config.seed);
   const envRng = root.fork("environment");
@@ -68,6 +70,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   let providersConfig: Awaited<ReturnType<typeof loadProvidersConfig>> | undefined;
   const deciders: Array<{ id: string; decider: Decider }> = [];
   for (const agent of experiment.config.agents) {
+    const memory = { ...scenario.config.memory, ...agent.memory };
     if (isPolicyAgent(agent)) {
       const ref = resolvePolicyRef(agent.policy, experiment.path);
       const loaded = await loadPolicy(ref, agent.params);
@@ -76,7 +79,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
           throw new ConfigError(`Agent ${agent.id}: policy "${agent.policy}" uses action "${name}", which scenario ${scenario.config.scenario} does not enable`);
         }
       }
-      deciders.push({ id: agent.id, decider: new PolicyAgent(agent.id, loaded.policy, agent.params, root.fork(`agent:${agent.id}`), agent.policy) });
+      deciders.push({ id: agent.id, decider: new PolicyAgent(agent.id, loaded.policy, agent.params, root.fork(`agent:${agent.id}`), agent.policy, memory.window) });
     } else {
       let provider: ModelProvider;
       if (options.providerFactory) {
@@ -98,6 +101,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
           goal: agent.goal,
           systemPrompt: scenario.config.prompt?.system,
           temperature: agent.temperature,
+          memory,
         }),
       });
     }
@@ -115,7 +119,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
       )
     : {};
 
-  return { scenario, rules, actions, world, deciders, envRng, endpoints };
+  return { scenario, rules, actions, argValidators, world, deciders, envRng, endpoints };
 }
 
 export async function runExperiment(path: string, options: RunOptions = {}): Promise<RunSummary> {
@@ -150,6 +154,7 @@ export async function runExperiment(path: string, options: RunOptions = {}): Pro
     world: prepared.world,
     agents: prepared.deciders,
     actions: prepared.actions,
+    argValidators: prepared.argValidators,
     rules: prepared.rules,
     rng: prepared.envRng,
     log,

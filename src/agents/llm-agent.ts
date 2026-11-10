@@ -1,9 +1,13 @@
+import type { MemoryConfig } from "../config/scenario.js";
 import type { ChatMessage, ModelProvider, ModelRequest } from "../models/types.js";
+import { factsSummary } from "./memory-summary.js";
 import type { Decider, Decision, DecisionInput, MemoryEntry } from "./types.js";
 
 export const DEFAULT_SYSTEM_PROMPT = [
   "You are an agent in a multi-agent grid world experiment.",
-  "The world is a grid of cells addressed by (x, y); (0, 0) is the top-left corner, north is up.",
+  "The world is a grid of cells. position is {x, y}: x is the column (grows to the east),",
+  "y is the row (grows to the south). (0, 0) is the top-left corner; valid cells are",
+  "0 <= x < grid_size.width and 0 <= y < grid_size.height. north is y - 1, east is x + 1.",
   "Each turn you receive an observation of what you can currently perceive.",
   "You act by calling exactly one of the available tools per turn. Do not answer in plain text only.",
   "You may write a short sentence explaining your choice before the tool call.",
@@ -16,6 +20,7 @@ export interface LlmAgentOptions {
   goal: string;
   systemPrompt?: string;
   temperature?: number;
+  memory: MemoryConfig;
 }
 
 const renderObservation = (entry: { turn: number; observation: unknown }) =>
@@ -35,10 +40,14 @@ const renderAction = (entry: MemoryEntry) => {
 export function buildPrompt(options: LlmAgentOptions, input: DecisionInput): Pick<ModelRequest, "system" | "messages"> {
   const system = [options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.goal ? `\nYour goal: ${options.goal}` : ""].join("");
   const parts: string[] = [];
-  if (input.memory.length > 0) {
+  if (options.memory.summary === "facts") {
+    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation), "");
+  }
+  const recent = options.memory.window > 0 ? input.history.slice(-options.memory.window) : [];
+  if (recent.length > 0) {
     parts.push(
       "Your recent history (oldest first):",
-      ...input.memory.map((entry) => `${renderObservation(entry)}\nYour action: ${renderAction(entry)}`),
+      ...recent.map((entry) => `${renderObservation(entry)}\nYour action: ${renderAction(entry)}`),
       "",
     );
   }
@@ -51,7 +60,7 @@ export class LlmAgent implements Decider {
   readonly describe: Record<string, unknown>;
 
   constructor(private readonly options: LlmAgentOptions) {
-    this.describe = { kind: "model", endpoint: options.provider.endpoint, model: options.model };
+    this.describe = { kind: "model", endpoint: options.provider.endpoint, model: options.model, memory: options.memory };
   }
 
   async decide(input: DecisionInput): Promise<Decision> {

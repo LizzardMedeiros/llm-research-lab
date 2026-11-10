@@ -13,8 +13,11 @@ export interface DecisionInput {
   turn: number;
   observation: Observation;
   tools: ToolDef[];
-  /** Last N turns of this agent (scenario `memory.window`), oldest first. */
-  memory: MemoryEntry[];
+  /**
+   * Every past turn of this agent, oldest first. Each decider applies its own
+   * memory strategy (window, summary) to it.
+   */
+  history: MemoryEntry[];
 }
 
 export interface ProposedCall {

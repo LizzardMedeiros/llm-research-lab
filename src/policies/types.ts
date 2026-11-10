@@ -10,6 +10,7 @@ export interface PolicyContext {
   observation: Observation;
   /** Tools offered this turn (same as an LLM agent would get). */
   tools: ToolDef[];
+  /** Last N turns (the agent's memory window), oldest first. */
   memory: MemoryEntry[];
   params: Record<string, unknown>;
   /** Seeded, per-agent stream. Never use Math.random() in a policy. */

@@ -24,7 +24,7 @@ From the user's description, identify:
 | Communication | Who hears a `speak`, and when |
 | Occupancy | Shared or exclusive cells; what happens on conflict |
 | Scheduling | Simultaneous or sequential |
-| Memory | Window size N |
+| Memory | Window size N; facts summary or none (agents may override per experiment) |
 | End | Max turns and/or a world condition |
 
 Fill gaps with the defaults of `scenarios/first-contact` (or README §7 if it
@@ -93,7 +93,8 @@ rules:
   end:        { max_turns: 50 }
 
 memory:
-  window: 10
+  window: 10          # last N turns in full
+  summary: none       # none | facts (engine-compiled from the agent's own observations)
 
 # hooks: ./rules.ts
 ```

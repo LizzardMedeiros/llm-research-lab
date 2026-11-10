@@ -7,7 +7,9 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { runExperiment } from "../../src/engine/runner.js";
 import {
   agentHistory,
+  compactObservation,
   experimentState,
+  normalizeReason,
   experimentSummary,
   listRunFiles,
   loadRun,
@@ -66,6 +68,29 @@ describe("run reader", () => {
     expect(history.turns[0]).toMatchObject({ action: 'move {"direction":"north"}' });
     expect(history.agent).toMatchObject({ id: "a5", kind: "policy", policy: "repeat" });
     expect(() => agentHistory(loadRun(eventsDir), "zz")).toThrow(/Agents: a1/);
+  });
+
+  it("compacts observations, in the current and the pre-0.2 format", () => {
+    const current = {
+      turn: 3, agent_id: "a", position: { x: 2, y: 1 }, grid_size: { width: 5, height: 5 },
+      cell: { type: "floor", agents: ["b"] }, messages: [], last_action_error: null, available_actions: ["wait"],
+      revealed: [{ x: 1, y: 1, type: "wall", agents: [] }, { x: 3, y: 1, type: "floor", agents: ["c"] }],
+      score: 7,
+    };
+    expect(compactObservation(current)).toEqual({
+      at: "(2,1) floor",
+      cellmates: ["b"],
+      revealed: ["(1,1) wall", "(3,1) floor: c"],
+      score: 7,
+    });
+    const legacy = { ...current, position: [2, 1], revealed: [{ position: [3, 1], type: "floor", agents: ["c"] }] };
+    expect(compactObservation(legacy)).toMatchObject({ at: "(2,1) floor", revealed: ["(3,1) floor: c"] });
+  });
+
+  it("groups rejection reasons without losing their kind", () => {
+    expect(normalizeReason("no tool call (stop reason: stop)")).toBe("no tool call");
+    expect(normalizeReason('observe: unexpected argument "direction"')).toBe("observe: unexpected argument …");
+    expect(normalizeReason("cannot move east: outside the grid")).toBe("cannot move east: outside the grid");
   });
 
   it("summarizes per-agent metrics", () => {

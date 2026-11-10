@@ -158,7 +158,8 @@ These mechanics are standardized and shared by every scenario:
 | **Standard actions** | `move`, `speak`, `observe` and `wait` are built into the engine with fixed semantics and tool schemas, reusable by any scenario (see below). |
 | **Policy agents** | Rule-based agents (no LLM) receive the same observation and tools as LLM agents; the engine treats both identically. |
 | **Environment owns reality** | Agents only propose actions; the environment validates and applies them. |
-| **Rejected actions** | An invalid action (unknown, malformed, out of bounds, provider error) becomes `wait`, emits `environment.action_rejected` with the reason, and the reason appears in the agent's next observation. |
+| **Argument validation** | Every call's arguments are checked against the exact JSON Schema given to the model (standard and custom actions). Extra, missing or mistyped arguments are rejected, with every problem listed, e.g. `observe: unexpected argument "direction"`. |
+| **Rejected actions** | An invalid action (unknown, malformed, schema-invalid, out of bounds, provider error) becomes `wait`, emits `environment.action_rejected` with the reason, and the reason appears in the agent's next observation. |
 | **Event envelope** | Stable event schema persisted as JSONL. |
 | **Provider interface** | A single interface for all LLM providers. |
 | **Seeded randomness** | All environment randomness comes from a seeded RNG. |
@@ -281,7 +282,7 @@ An independent participant.
 id
 provider / model
 goal (free text, injected into the prompt)
-memory (window of the last N observations/actions)
+memory (window of the last N turns + optional summary)
 observation
 available actions
 ```
@@ -289,8 +290,8 @@ available actions
 The Agent does not depend on a specific LLM provider.
 
 Prompt per turn: the system prompt (scenario `prompt.system`, or the engine
-default) plus the goal, and **one** user message containing the memory window
-as a history block, then the current observation. Past turns are never
+default) plus the goal, and **one** user message containing the optional
+summary, the memory window as a history block, then the current observation. Past turns are never
 replayed as assistant messages. That format teaches models to answer in text
 instead of calling a tool: with `qwen3:0.6b` it dropped valid tool calls from
 ~53% to ~6% of turns.
@@ -391,14 +392,21 @@ Example (first scenario):
 ```json
 {
   "turn": 12,
-  "position": [2, 2],
-  "grid_size": [5, 5],
+  "agent_id": "a1",
+  "position": { "x": 2, "y": 2 },
+  "grid_size": { "width": 5, "height": 5 },
   "cell": { "type": "floor", "agents": ["a3"] },
-  "messages": [{ "from": "a3", "text": "Where is a5?" }],
+  "messages": [{ "from": "a3", "text": "Where is a5?", "turn": 11 }],
+  "revealed": [{ "x": 1, "y": 1, "type": "wall", "agents": [] }],
   "last_action_error": null,
   "available_actions": ["move", "speak", "observe", "wait"]
 }
 ```
+
+Coordinates are explicit objects (`{x, y}`, `{width, height}`), never bare
+pairs: models confuse `[x, y]` with `[row, column]`. `revealed` appears after
+an `observe`; `visible` appears when perception reaches beyond the agent's own
+cell.
 
 ## Action
 
@@ -447,9 +455,31 @@ rules:
   end:        { max_turns: 50 }
 
 memory:
-  window: 10
+  window: 10                # last N turns in full
+  summary: none             # none | facts
 
 hooks: ./rules.ts           # optional
+```
+
+Memory strategies:
+
+- `window: N`: the last N turns (observation + action), rendered in full.
+- `summary: facts`: a compact block compiled by the engine **only from the
+  agent's own observations**. It covers where the agent has been and for how
+  long, cells it knows by type, the last sighting of each agent, messages
+  heard and sent (and how many were sent while it saw no one), and accepted
+  vs rejected actions. It states facts and never gives advice, so no
+  hallucination can enter it. A summary written by the model itself is a
+  possible future strategy.
+
+An experiment can override the scenario's memory per agent, which allows A/B
+comparisons in the same run:
+
+```yaml
+  - id: q1
+    provider: ollama
+    model: qwen3:0.6b
+    memory: { window: 3, summary: facts }
 ```
 
 The map is drawn as ASCII; the legend maps each symbol to a cell type and its

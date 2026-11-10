@@ -13,6 +13,20 @@ const CellSpecSchema = z
 
 const PositionSchema = z.tuple([z.number().int(), z.number().int()]);
 
+/**
+ * How much of its past an agent gets each turn:
+ * - window: last N turns rendered in full;
+ * - summary: "none", or "facts" (engine-compiled from the agent's own
+ *   observations: places, known cells, agents seen, messages, action stats).
+ */
+export const MemorySchema = z
+  .object({
+    window: z.number().int().min(0).default(10),
+    summary: z.enum(["none", "facts"]).default("none"),
+  })
+  .strict();
+export type MemoryConfig = z.infer<typeof MemorySchema>;
+
 export const ScenarioSchema = z
   .object({
     scenario: z.string().min(1),
@@ -48,7 +62,7 @@ export const ScenarioSchema = z
         end: z.object({ max_turns: z.number().int().positive() }).strict(),
       })
       .strict(),
-    memory: z.object({ window: z.number().int().min(0).default(10) }).strict().default({ window: 10 }),
+    memory: MemorySchema.default({ window: 10, summary: "none" }),
     prompt: z.object({ system: z.string() }).strict().optional(),
     hooks: z.string().optional(),
   })

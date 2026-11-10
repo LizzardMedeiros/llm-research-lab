@@ -150,16 +150,44 @@ export function experimentState(run: LoadedRun) {
   };
 }
 
+type Cell = { x: number; y: number; type: string; agents: string[] };
+
+/** Accepts {x, y} and the pre-0.2 [x, y] format, so old logs stay readable. */
+const toPoint = (value: unknown): { x: number; y: number } =>
+  Array.isArray(value) ? { x: value[0], y: value[1] } : (value as { x: number; y: number });
+const toCell = (value: unknown): Cell => {
+  const c = value as Cell & { position?: [number, number] };
+  return c.position ? { ...toPoint(c.position), type: c.type, agents: c.agents } : c;
+};
+const cellText = (value: unknown) => {
+  const c = toCell(value);
+  return `(${c.x},${c.y}) ${c.type}${c.agents.length ? `: ${c.agents.join(", ")}` : ""}`;
+};
+const KNOWN_OBSERVATION_KEYS = new Set([
+  "turn", "agent_id", "position", "grid_size", "cell", "visible", "messages", "revealed", "last_action_error", "available_actions",
+]);
+
+/** Drops empty and static fields; cells become short strings like "(3,1) floor: p1". */
+export function compactObservation(o: Record<string, unknown>): Record<string, unknown> {
+  const position = toPoint(o["position"]);
+  const cell = o["cell"] as { type: string; agents: string[] };
+  const out: Record<string, unknown> = { at: `(${position.x},${position.y}) ${cell.type}` };
+  if (cell.agents.length) out["cellmates"] = cell.agents;
+  if ((o["messages"] as unknown[]).length) out["messages"] = o["messages"];
+  if (o["last_action_error"]) out["last_action_error"] = o["last_action_error"];
+  if (o["revealed"]) out["revealed"] = (o["revealed"] as unknown[]).map(cellText);
+  if (o["visible"]) out["visible"] = (o["visible"] as unknown[]).map(cellText);
+  for (const [key, value] of Object.entries(o)) if (!KNOWN_OBSERVATION_KEYS.has(key)) out[key] = value; // hook fields
+  return out;
+}
+
 /** Compact one-line form of an event, for feeds. */
 export function compactEvent(event: LabEvent): Record<string, unknown> {
   const p = event.payload;
   const base = { event_id: event.event_id, turn: event.turn, type: event.type, agent_id: event.agent_id };
   switch (event.type) {
-    case "agent.observation": {
-      const o = p["observation"] as Record<string, unknown>;
-      const { available_actions: _a, agent_id: _id, turn: _t, ...rest } = o;
-      return { ...base, observation: rest };
-    }
+    case "agent.observation":
+      return { ...base, observation: compactObservation(p["observation"] as Record<string, unknown>) };
     case "agent.model_request":
       return { ...base, endpoint: p["endpoint"], model: p["model"] };
     case "agent.model_response":
@@ -214,12 +242,13 @@ export function agentHistory(run: LoadedRun, agentId: string, lastTurns?: number
     const p = e.payload;
     if (e.type === "agent.observation") {
       const o = p["observation"] as Record<string, unknown>;
+      const seen = compactObservation(o);
       Object.assign(row(e.turn), {
-        position: o["position"],
-        cell_agents: (o["cell"] as { agents: string[] }).agents,
-        ...((o["messages"] as unknown[]).length ? { heard: o["messages"] } : {}),
-        ...(o["revealed"] ? { revealed_agents: (o["revealed"] as Array<{ position: unknown; agents: string[] }>).filter((c) => c.agents.length) } : {}),
-        ...(o["visible"] ? { visible_agents: (o["visible"] as Array<{ position: unknown; agents: string[] }>).filter((c) => c.agents.length) } : {}),
+        at: seen["at"],
+        ...(seen["cellmates"] ? { cellmates: seen["cellmates"] } : {}),
+        ...(seen["messages"] ? { heard: seen["messages"] } : {}),
+        ...(o["revealed"] ? { revealed_agents: (o["revealed"] as unknown[]).map(toCell).filter((c) => c.agents.length).map(cellText) } : {}),
+        ...(o["visible"] ? { visible_agents: (o["visible"] as unknown[]).map(toCell).filter((c) => c.agents.length).map(cellText) } : {}),
       });
     } else if (e.type === "agent.action") {
       Object.assign(row(e.turn), { action: `${p["action"]} ${JSON.stringify(p["args"])}`, ...(p["rationale"] ? { rationale: p["rationale"] } : {}) });
@@ -240,7 +269,9 @@ const count = (values: string[]) =>
     Object.entries(values.reduce<Record<string, number>>((acc, v) => ((acc[v] = (acc[v] ?? 0) + 1), acc), {})).sort((a, b) => b[1] - a[1]),
   );
 
-const normalizeReason = (reason: string) => reason.replace(/\(stop reason: .*\)/, "").replace(/: .*$/, "").trim();
+/** Groups rejection reasons: drops the stop reason and masks quoted values. */
+export const normalizeReason = (reason: string) =>
+  reason.replace(/\s*\(stop reason: [^)]*\)/, "").replace(/"[^"]*"/g, "…").trim();
 
 /** Aggregated per-agent metrics, for comparing agents and models. */
 export function experimentSummary(run: LoadedRun) {
@@ -253,7 +284,10 @@ export function experimentSummary(run: LoadedRun) {
     const responses = mine.filter((e) => e.type === "agent.model_response").map((e) => e.payload);
     const errors = mine.filter((e) => e.type === "agent.model_error").length;
 
-    const positions = observations.map((o) => (o["position"] as number[]).join(","));
+    const positions = observations.map((o) => {
+      const { x, y } = toPoint(o["position"]);
+      return `${x},${y}`;
+    });
     const met = new Set(observations.flatMap((o) => o["cell"].agents as string[]));
     const heard = observations.flatMap((o) => o["messages"] as Array<{ from: string }>);
     const sum = (key: "inputTokens" | "outputTokens") =>

@@ -6,6 +6,12 @@ import { ConfigError } from "./errors.js";
 
 const AgentId = z.string().regex(/^[A-Za-z0-9_-]+$/, "agent ids use letters, digits, _ and -");
 
+/** Per-agent override of the scenario's memory strategy (any subset). */
+const MemoryOverrideSchema = z
+  .object({ window: z.number().int().min(0).optional(), summary: z.enum(["none", "facts"]).optional() })
+  .strict()
+  .optional();
+
 const PolicyAgentSchema = z
   .object({
     id: AgentId,
@@ -14,6 +20,7 @@ const PolicyAgentSchema = z
     policy: z.string().min(1),
     params: z.record(z.string(), z.unknown()).default({}),
     goal: z.string().default(""),
+    memory: MemoryOverrideSchema,
   })
   .strict();
 
@@ -25,6 +32,7 @@ const ModelAgentSchema = z
     model: z.string().min(1),
     goal: z.string().default(""),
     temperature: z.number().optional(),
+    memory: MemoryOverrideSchema,
   })
   .strict();
 

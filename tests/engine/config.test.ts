@@ -19,6 +19,7 @@ describe("scenario config", () => {
     expect([s.width, s.height]).toEqual([5, 5]);
     expect(s.cells[1]![1]).toMatchObject({ type: "wall", blocksMovement: true });
     expect(s.config.actions.speak).toEqual({ range: "same_cell", delivery: "next_turn", max_length: 280 });
+    expect(s.config.memory).toEqual({ window: 10, summary: "none" });
   });
 
   it("keeps extra legend attributes", () => {
