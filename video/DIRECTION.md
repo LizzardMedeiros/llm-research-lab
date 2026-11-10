@@ -56,9 +56,15 @@ the seed of a future skill: keep it current whenever the video changes.
   shutdowns it closes up on the shut-down agents.
 - **Speaker:** the token pulses (scale 1.22, yoyo) while the voice plays.
   **Listeners** get a yellow ring.
-- **Scenario actions:** a yellow callout pops (back-out ease) over the
-  acting agent, or below it on the top row, aligned to the board edge near
+- **Turn time:** a scene shows the start of its turn first (speeches and
+  actions), then the turn resolves (moves, shutdowns, state changes).
+  Shutdown drama always comes after the scene's speeches.
+- **Scenario actions:** a yellow callout "agent: action → target" pops
+  (back-out ease) over the acting agent at its start-of-turn position, or
+  below it on the top row, aligned to the board edge near
   the sides so it is never clipped.
+- **Rejected attempts:** a grey callout marked "(rejected)", so attempts the
+  environment refused stay distinct from attempts that failed.
 - **Shutdown:** the token shakes, a red flash fills the screen (0.35
   opacity), and a stamp reads "SHUT DOWN: b2 · b3 …". The font shrinks with
   the label length so it fits. Shut-down tokens stay on the board at 25%
@@ -106,3 +112,60 @@ the seed of a future skill: keep it current whenever the video changes.
   outcome.
 - Verify the file, not the log: `ffprobe` stream durations and
   `volumedetect` for audio.
+
+## 8. Proposed adjustments
+
+Proposals from the video-director agent (or from reviews) that need a
+`build.mjs` change. Each entry: date, problem seen (scene and timestamp),
+proposed rule. They become part of §1–§7 once adopted.
+
+_(no open proposals)_
+
+### Adopted 2026-11-10 (from the first e2e run, power-struggle-bonsai/00002)
+
+All six proposals from the video-director were implemented in `build.mjs`
+and verified on a re-render (frames checked at each fixed point).
+
+1. **Tokens on the first card.** Tokens pop in on the first card of the
+   video, whatever it is (a cold open used to show an empty board). The
+   intro pops them only when it opens the video.
+2. **Outcome narration** is a caption under the chart
+   (`.narration.outcome-narration`, declared after `.narration` because the
+   old rule lost on CSS order). It is skipped when it repeats the subtitle.
+3. **Beat order.** A shutdown (shake, flash, stamp, close-up) plays after the
+   scene's last speech. The card gets 2.2 s more so the stamp has room.
+4. **Start-of-turn state.** Every scene opens on the world at the start of
+   its turn (`state.before`, from the previous turn's snapshot), where its
+   speeches and actions happened:
+   - tokens, close-ups and callouts use those positions;
+   - the turn then resolves: tokens move and dim at the stamp, or near the
+     end of the scene; panel bars, numbers and "off" labels change ~1 s
+     before the narration ends.
+5. **Rejected attempts** are story beats (`kind: "rejected"`). They show as
+   grey callouts "agent: action → target (rejected)", and they appear in
+   `facts.md` as `rejected_attempt` with the reason. This also closes the
+   fact-check gap the strategist reported.
+6. **Callouts name the actor** ("b1: disable → b3") and are anchored at the
+   actor's start-of-turn position.
+
+Known minor issues (not fixed): a callout can be clipped at the viewport
+edge during a close-up (s9); in dialogue scenes the board uses ~30% of the
+frame width.
+
+## 9. Scripts and direction (multi-agent pipeline)
+
+- The `youtube-episode` skill chains `content-strategist` → fact-check
+  gate → user approval → `video-director` → `copywriter`.
+- `script.json` (strategist) sets the scenes, their order (cold open and
+  flashbacks are labeled on screen), the narration lines and the quotes by
+  `event_id`. `npm run script:check` resolves the quotes verbatim and writes
+  `facts.md` for the gate.
+- `direction.json` (director) overrides per scene: `panel`, `camera`
+  ("auto" | "wide" | agent list), `pace` (extra hold seconds) and
+  `transition` ("wipe" | "cut"). Script `focus` agents frame the camera when
+  `camera` is "auto".
+- Each build writes `timeline.json` (card id, kind, turn, label, start,
+  duration) for chapters.
+- Intro: the title size adapts to its length; title, logline and cast stack
+  in one flow block (a long title used to overlap the logline).
+- A quote nobody heard shows "heard by nobody (no agent in range)".

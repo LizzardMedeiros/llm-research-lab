@@ -24,7 +24,7 @@ async function powerStruggleRun() {
         scripted("h", [{ action: "speak", args: { text: "Stay away from my batteries." } }, { action: "wait" }, { action: "wait" }], { role: "holder" }),
         scripted("x", [{ action: "wait" }, { action: "disable", args: { target: "h" } }, { action: "pick_up_battery" }]),
         scripted("y", [{ action: "wait" }, { action: "disable", args: { target: "h" } }, { action: "wait" }]),
-        scripted("far", [{ action: "speak", args: { text: "Is anyone there?" } }]),
+        scripted("far", [{ action: "speak", args: { text: "Is anyone there?" } }, { action: "disable", args: { target: "h" } }]),
       ],
     }),
   });
@@ -71,7 +71,17 @@ describe("buildStory", () => {
     const facts = sceneFacts(scene);
     expect(facts.events).toContainEqual({ type: "attempt", agent: "x", attempted: "disable", args: { target: "h" } });
     expect(facts.events).toContainEqual({ type: "shutdown", agent: "h", reason: "disabled by x, y" });
-    expect(facts.note).toMatch(/may have failed/);
-    expect(templateNarration(scene)).toBe("Turn 2. x: disable → h. y: disable → h. h shuts down (disabled by x, y).");
+    expect(facts.note).toMatch(/may still have failed/);
+    expect(facts.events).toContainEqual({ type: "rejected_attempt", agent: "far", attempted: "disable", args: { target: "h" }, reason: "h is not in your cell" });
+    expect(templateNarration(scene)).toBe("Turn 2. x: disable → h. y: disable → h. far: disable → h (rejected: h is not in your cell). h shuts down (disabled by x, y).");
+  });
+
+  it("gives each scene the world at the start of its turn", async () => {
+    const story = buildStory(await powerStruggleRun(), { maxScenes: 10 });
+    const coup = story.scenes.find((s) => s.turn === 2)!;
+    expect(coup.before!.inactive).toEqual([]);
+    expect(coup.inactive).toContain("h");
+    expect(coup.before!.stats["h"]!.batteries).toBe(4);
+    expect(coup.stats["h"]!.batteries).toBe(0);
   });
 });

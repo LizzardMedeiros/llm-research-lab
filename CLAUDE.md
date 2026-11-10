@@ -24,6 +24,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
     produces valid tool calls (calls the real model)
   - `npm run story -- <exp>/<run> [--narrator <endpoint>/<model>]` — story.json for a video
   - `docker compose --profile video run --rm video node /app/video/build.mjs <story.json>` — render it
+  - `npm run script:check -- <script.json>` — validate a written episode script, resolve quotes, write facts.md
   - `npm run mcp` — observer MCP server on stdio (`LAB_EVENTS_DIR`, default `events`)
   - `docker compose up -d ui` — replay/live UI at http://localhost:3100 (`LAB_PORT`;
     3000 is taken by another project on this machine)
@@ -119,6 +120,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
   or invent dialogue.
 - Narration states facts only. Model narrators get scene facts with actions
   marked as attempts; the video footer must name who wrote the narration.
+- Written scripts (`script.json`) never contain dialogue text: quotes are
+  `event_id` references resolved verbatim by `script:check`
+  (`src/story/script.ts`). Narration passes a fact-check against `facts.md`
+  and user approval before any render.
 - `video/` is a separate package and image (HyperFrames 0.9.31, GSAP, ffmpeg,
   Chrome, Kokoro). Keep telemetry disabled; no HeyGen account or cloud render.
 - `video/DIRECTION.md` is the running log of video direction decisions (layout
@@ -160,5 +165,8 @@ user approval before implementation.
 ## Project Claude config
 
 - `.claude/skills/` — project skills (workflows such as creating a scenario).
-- `.claude/agents/` — project subagents.
+- `.claude/agents/` — project subagents: `content-strategist`, `video-director`,
+  `copywriter` (used by the `youtube-episode` skill).
+- `.claude/skills/youtube-episode/` — run → YouTube episode pipeline (script,
+  fact-check gate, user approval, render, copy).
 - `.mcp.json` — MCP servers for Claude Code: `lab-observer` (read-only run analysis).

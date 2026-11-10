@@ -1034,6 +1034,23 @@ docker compose --profile video run --rm video \
   HyperFrames telemetry is disabled (`HYPERFRAMES_NO_TELEMETRY=1`,
   `DO_NOT_TRACK=1`). No HeyGen account is used.
 - **Speed:** a 2–3 minute video renders in about 35 s on CPU.
+- **YouTube episodes (multi-agent):** the `youtube-episode` skill
+  (`/youtube-episode <exp>/<run>` in Claude Code) chains three project
+  agents:
+  - `content-strategist` writes `brief.md` and `script.json`: scenes, order
+    (cold open and flashbacks allowed, labeled), narration, and quotes as
+    `event_id` references;
+  - a fact-check gate (`npm run script:check` writes `facts.md`) and your
+    approval come next;
+  - `video-director` writes `direction.json` (panel, camera, pace,
+    transition per scene), renders, reviews frames and delivers
+    `episode.mp4`;
+  - `copywriter` writes `youtube.md` (titles, description with a
+    transparency note, chapters from `timeline.json`, tags, thumbnail
+    text, pinned comment).
+
+  Outputs go to `video/productions/<exp>-<run>/` (gitignored). Nothing is
+  uploaded.
 - **Direction notes:** `video/DIRECTION.md` records the visual and
   technical decisions (layout modes, when the state panel shows, motion
   language, HyperFrames lessons, review process).

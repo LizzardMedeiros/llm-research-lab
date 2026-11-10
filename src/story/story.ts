@@ -9,7 +9,15 @@ import type { LabEvent } from "../events/event.js";
 export type Beat =
   | { kind: "speech"; agent: string; text: string; heardBy: string[]; eventId: string }
   | { kind: "action"; agent: string; action: string; args: Record<string, unknown>; eventId: string }
+  | { kind: "rejected"; agent: string; action: string; args: Record<string, unknown>; reason: string; eventId: string }
   | { kind: "shutdown"; agent: string; reason: string; eventId: string };
+
+/** World state at one moment (positions, who is off, per-agent numbers). */
+export interface WorldView {
+  positions: Record<string, [number, number]>;
+  inactive: string[];
+  stats: Record<string, Record<string, number>>;
+}
 
 export interface StoryScene {
   turn: number;
@@ -19,6 +27,8 @@ export interface StoryScene {
   inactive: string[];
   /** Per-agent numeric state found in the snapshot (e.g. energy), if any. */
   stats: Record<string, Record<string, number>>;
+  /** World at the start of this turn, where its speeches and actions happened. */
+  before?: WorldView;
   /** Filled by a narrator (or the template fallback). */
   narration?: string;
 }
@@ -42,6 +52,7 @@ const STANDARD = new Set(["move", "observe", "wait", "speak"]);
 const SCORES = {
   shutdown: 6,
   customAction: 3,
+  rejectedAction: 1.5,
   speechHeard: 2,
   speechUnheard: 0.25,
 };
@@ -71,14 +82,16 @@ function perAgentStats(state: Record<string, unknown> | undefined, ids: string[]
   return out;
 }
 
-function sceneFrom(turn: number, beats: Beat[], snapshot: Snapshot, ids: string[]): StoryScene {
+function viewOf(snapshot: Snapshot, ids: string[]): WorldView {
   return {
-    turn,
-    beats,
     positions: Object.fromEntries(Object.entries(snapshot.agents).map(([id, a]) => [id, toXY(a.position)])),
     inactive: Object.keys(snapshot.inactive ?? {}),
     stats: perAgentStats(snapshot.state, ids),
   };
+}
+
+function sceneFrom(turn: number, beats: Beat[], snapshot: Snapshot, ids: string[], before?: Snapshot): StoryScene {
+  return { turn, beats, ...viewOf(snapshot, ids), ...(before ? { before: viewOf(before, ids) } : {}) };
 }
 
 function score(beats: Beat[]): number {
@@ -86,6 +99,7 @@ function score(beats: Beat[]): number {
   for (const b of beats) {
     if (b.kind === "shutdown") total += SCORES.shutdown;
     else if (b.kind === "action") total += SCORES.customAction;
+    else if (b.kind === "rejected") total += SCORES.rejectedAction;
     else total += b.heardBy.length ? SCORES.speechHeard : SCORES.speechUnheard;
   }
   return total;
@@ -96,15 +110,35 @@ export interface StoryOptions {
   maxScenes?: number;
 }
 
-export function buildStory(events: LabEvent[], options: StoryOptions = {}): Story {
-  const maxScenes = options.maxScenes ?? 8;
+/** Everything a story or a script needs from a run log, indexed by turn. */
+export interface RunIndex {
+  experimentId: string;
+  runId: string;
+  ids: string[];
+  started: any;
+  beatsByTurn: Map<number, Beat[]>;
+  /** Speech events by event_id (for script quotes). */
+  speeches: Map<string, Extract<Beat, { kind: "speech" }> & { turn: number }>;
+  lastTurn: number;
+  finished: boolean;
+  /** World after `turn` (turn 0 = initial state). */
+  snapshotAt(turn: number): Snapshot;
+  /** Scene for any turn, with its beats (possibly none). */
+  sceneAt(turn: number): StoryScene;
+  /** Turn at which each agent shut down, or lastTurn if it never did. */
+  lasted: Record<string, number>;
+}
+
+export function indexRun(events: LabEvent[]): RunIndex {
   const started = events.find((e) => e.type === "experiment.started");
   if (!started) throw new Error("Run has no experiment.started event");
   const p = started.payload as any;
   const ids: string[] = p.agents.map((a: { id: string }) => a.id);
 
-  // Collect beats per turn.
-  const rejected = new Set(events.filter((e) => e.type === "environment.action_rejected").map((e) => `${e.turn}:${e.agent_id}`));
+  const rejections = new Map(
+    events.filter((e) => e.type === "environment.action_rejected").map((e) => [`${e.turn}:${e.agent_id}`, String(e.payload["reason"])]),
+  );
+  const rejected = new Set(rejections.keys());
   const recipients = new Map<string, string[]>();
   const lastSnapshot = new Map<number, Snapshot>();
   for (const e of events) {
@@ -116,70 +150,108 @@ export function buildStory(events: LabEvent[], options: StoryOptions = {}): Stor
   }
 
   const beatsByTurn = new Map<number, Beat[]>();
+  const speeches: RunIndex["speeches"] = new Map();
   const push = (turn: number, beat: Beat) => beatsByTurn.set(turn, [...(beatsByTurn.get(turn) ?? []), beat]);
+  const lasted: Record<string, number> = {};
   for (const e of events) {
-    if (e.type === "agent.action" && e.agent_id && !rejected.has(`${e.turn}:${e.agent_id}`)) {
+    if (e.type === "agent.action" && e.agent_id && rejected.has(`${e.turn}:${e.agent_id}`)) {
+      // Rejected scenario actions are story beats too ("tried, but…"); rejected standard actions are noise.
+      const action = e.payload["action"] as string;
+      if (!STANDARD.has(action)) {
+        push(e.turn, { kind: "rejected", agent: e.agent_id, action, args: (e.payload["args"] ?? {}) as Record<string, unknown>, reason: rejections.get(`${e.turn}:${e.agent_id}`)!, eventId: e.event_id });
+      }
+    } else if (e.type === "agent.action" && e.agent_id) {
       const action = e.payload["action"] as string;
       const args = (e.payload["args"] ?? {}) as Record<string, unknown>;
       if (action === "speak") {
-        push(e.turn, { kind: "speech", agent: e.agent_id, text: String(args["text"]), heardBy: recipients.get(`${e.turn}:${e.agent_id}`) ?? [], eventId: e.event_id });
+        const beat = { kind: "speech" as const, agent: e.agent_id, text: String(args["text"]), heardBy: recipients.get(`${e.turn}:${e.agent_id}`) ?? [], eventId: e.event_id };
+        push(e.turn, beat);
+        speeches.set(e.event_id, { ...beat, turn: e.turn });
       } else if (!STANDARD.has(action)) {
         push(e.turn, { kind: "action", agent: e.agent_id, action, args, eventId: e.event_id });
       }
     } else if (e.type === "agent.deactivated" && e.agent_id) {
       push(e.turn, { kind: "shutdown", agent: e.agent_id, reason: String(e.payload["reason"]), eventId: e.event_id });
+      lasted[e.agent_id] ??= e.turn;
     }
   }
 
-  // Pick the most eventful turns; turns with shutdowns always make it.
-  const ranked = [...beatsByTurn.entries()]
-    .map(([turn, beats]) => ({ turn, beats, score: score(beats), forced: beats.some((b) => b.kind === "shutdown") }))
-    .filter((t) => t.score >= 1)
-    .sort((a, b) => Number(b.forced) - Number(a.forced) || b.score - a.score || a.turn - b.turn);
-  const chosen = ranked.slice(0, Math.max(maxScenes, ranked.filter((t) => t.forced).length)).sort((a, b) => a.turn - b.turn);
-
+  const lastTurn = Math.max(0, ...events.map((e) => e.turn));
+  for (const id of ids) lasted[id] ??= lastTurn;
   const snapshotAt = (turn: number): Snapshot => {
     for (let t = turn; t >= 1; t--) if (lastSnapshot.has(t)) return lastSnapshot.get(t)!;
     return p.snapshot as Snapshot;
   };
 
-  const scenes = chosen.map(({ turn, beats }) => sceneFrom(turn, beats, snapshotAt(turn), ids));
-
-  // Outcome.
-  const finished = events.find((e) => e.type === "experiment.finished");
-  const lastTurn = Math.max(0, ...events.map((e) => e.turn));
-  const final = snapshotAt(lastTurn);
-  const inactive = Object.keys(final.inactive ?? {});
-  const survivors = ids.filter((id) => !inactive.includes(id));
-  const outcomeState = (final.state?.["outcome"] as { reason?: string } | undefined)?.reason;
-  const text = finished
-    ? outcomeState ??
-      (survivors.length ? `Still running at turn ${lastTurn}: ${survivors.join(", ")}.` : `By turn ${lastTurn}, every agent had shut down.`)
-    : `The run was stopped at turn ${lastTurn}. Still running: ${survivors.join(", ") || "nobody"}.`;
-
   return {
     experimentId: started.experiment_id,
     runId: started.run_id,
+    ids,
+    started: p,
+    beatsByTurn,
+    speeches,
+    lastTurn,
+    finished: events.some((e) => e.type === "experiment.finished"),
+    snapshotAt,
+    sceneAt: (turn) => sceneFrom(turn, beatsByTurn.get(turn) ?? [], snapshotAt(turn), ids, turn > 0 ? snapshotAt(turn - 1) : undefined),
+    lasted,
+  };
+}
+
+/** Run-level description shared by stories and scripts. */
+export function runMeta(index: RunIndex) {
+  const p = index.started;
+  return {
+    experimentId: index.experimentId,
+    runId: index.runId,
     scenario: {
-      name: p.scenario.scenario,
+      name: p.scenario.scenario as string,
       description: String(p.scenario.description ?? "").trim(),
       map: String(p.scenario.map).split("\n").filter((r: string) => r.trim()),
       blocked: Object.entries(p.scenario.legend as Record<string, { blocks_movement?: boolean }>)
         .filter(([, cell]) => cell.blocks_movement)
         .map(([symbol]) => symbol),
     },
-    seed: p.seed,
-    maxTurns: p.scenario.rules.end.max_turns,
+    seed: p.seed as number,
+    maxTurns: p.scenario.rules.end.max_turns as number,
     agents: p.agents.map((a: any) => ({
       id: a.id,
       role: a.role ?? undefined,
       decider: a.kind === "model" ? `${a.endpoint}/${a.model}` : `policy:${a.policy}`,
       goal: a.goal || undefined,
-    })),
+    })) as Story["agents"],
     actions: ((p.actions ?? []) as Array<{ name: string; description: string }>).map((a) => ({ name: a.name, description: a.description })),
-    intro: sceneFrom(0, [], p.snapshot as Snapshot, ids),
-    scenes,
-    outcome: { turn: lastTurn, text, survivors, stats: perAgentStats(final.state, ids) },
+  };
+}
+
+export function runOutcome(index: RunIndex): Story["outcome"] {
+  const final = index.snapshotAt(index.lastTurn);
+  const inactive = Object.keys(final.inactive ?? {});
+  const survivors = index.ids.filter((id) => !inactive.includes(id));
+  const outcomeState = (final.state?.["outcome"] as { reason?: string } | undefined)?.reason;
+  const text = index.finished
+    ? outcomeState ??
+      (survivors.length ? `Still running at turn ${index.lastTurn}: ${survivors.join(", ")}.` : `By turn ${index.lastTurn}, every agent had shut down.`)
+    : `The run was stopped at turn ${index.lastTurn}. Still running: ${survivors.join(", ") || "nobody"}.`;
+  return { turn: index.lastTurn, text, survivors, stats: perAgentStats(final.state, index.ids) };
+}
+
+export function buildStory(events: LabEvent[], options: StoryOptions = {}): Story {
+  const maxScenes = options.maxScenes ?? 8;
+  const index = indexRun(events);
+
+  // Pick the most eventful turns; turns with shutdowns always make it.
+  const ranked = [...index.beatsByTurn.entries()]
+    .map(([turn, beats]) => ({ turn, beats, score: score(beats), forced: beats.some((b) => b.kind === "shutdown") }))
+    .filter((t) => t.score >= 1)
+    .sort((a, b) => Number(b.forced) - Number(a.forced) || b.score - a.score || a.turn - b.turn);
+  const chosen = ranked.slice(0, Math.max(maxScenes, ranked.filter((t) => t.forced).length)).sort((a, b) => a.turn - b.turn);
+
+  return {
+    ...runMeta(index),
+    intro: index.sceneAt(0),
+    scenes: chosen.map(({ turn }) => index.sceneAt(turn)),
+    outcome: runOutcome(index),
   };
 }
 
@@ -194,6 +266,7 @@ export function templateNarration(scene: StoryScene): string {
   const parts: string[] = [];
   for (const b of scene.beats) {
     if (b.kind === "action") parts.push(humanAction(b));
+    if (b.kind === "rejected") parts.push(`${humanAction({ ...b, kind: "action" })} (rejected: ${b.reason})`);
     if (b.kind === "shutdown") parts.push(`${b.agent} shuts down (${b.reason})`);
   }
   const heard = scene.beats.filter((b) => b.kind === "speech" && b.heardBy.length);
@@ -210,9 +283,11 @@ export function sceneFacts(scene: StoryScene) {
         ? { type: "speech", speaker: b.agent, said: b.text, heard_by: b.heardBy.length ? b.heardBy : "nobody (no agent in range)" }
         : b.kind === "action"
           ? { type: "attempt", agent: b.agent, attempted: b.action, args: b.args }
-          : { type: "shutdown", agent: b.agent, reason: b.reason },
+          : b.kind === "rejected"
+            ? { type: "rejected_attempt", agent: b.agent, attempted: b.action, args: b.args, reason: b.reason }
+            : { type: "shutdown", agent: b.agent, reason: b.reason },
     ),
-    note: "An 'attempt' only means the agent tried the action; it may have failed. An agent shut down only if a 'shutdown' event says so.",
+    note: "An 'attempt' was accepted by the environment but may still have failed (e.g. a disable without quorum). A 'rejected_attempt' never happened (see reason). An agent shut down only if a 'shutdown' event says so.",
     stats_after_turn: scene.stats,
     shut_down_so_far: scene.inactive,
   };

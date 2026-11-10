@@ -1,8 +1,14 @@
 // Builds a narrated video from a story.json (made by `npm run story` in the lab).
 //
-//   node /video/build.mjs <story.json> [--quality draft|looks] [--no-render]
+//   node /video/build.mjs <story.json | script.resolved.json> [--quality draft|looks] [--no-render]
 //
-// Output, next to story.json: audio/*.wav, index.html, gsap.min.js, <name>.mp4
+// Input: a story.json (automatic scene selection, `npm run story`) or a
+// script.resolved.json (a written script, `npm run script:check`). An optional
+// direction.json next to the input lets a director override, per scene id:
+//   { "scenes": { "<id>": { "panel": "auto"|true|false, "camera": "auto"|"wide"|["b1","b3"],
+//                            "pace": <extra seconds held, -0.5..4>, "transition": "wipe"|"cut" } } }
+//
+// Output, next to the input: audio/*.wav, index.html, gsap.min.js, timeline.json, <name>.mp4
 // Dialogue on screen is verbatim from the run log. Narration is labeled.
 //
 // Staging: the board is a persistent "stage" with a camera (zooms on whoever
@@ -34,8 +40,65 @@ if (!storyPath) {
   process.exit(2);
 }
 
-const story = JSON.parse(readFileSync(storyPath, "utf8"));
+const input = JSON.parse(readFileSync(storyPath, "utf8"));
 const outDir = dirname(resolve(storyPath));
+
+/**
+ * meta: run description; plan: ordered scenes, each with narration lines,
+ * verbatim quotes and the world state to show.
+ */
+const isScript = input.resolved === true;
+const story = {
+  ...input,
+  title: input.title ?? input.scenario.name.replace(/-/g, " "),
+  source: input.source ?? `${input.experimentId}/${input.runId}`,
+  narrator: isScript ? "script" : input.narrator,
+};
+const plan = isScript
+  ? input.scenes.map((sc) => ({
+      id: sc.id,
+      kind: sc.kind,
+      turn: sc.turn,
+      flashback: sc.flashback,
+      focus: sc.focus,
+      state: sc.state,
+      narration: sc.narration,
+      quotes: sc.quotes,
+    }))
+  : [
+      { id: "intro", kind: "intro", turn: 0, state: input.intro, narration: [input.intro.narration || input.scenario.description], quotes: [] },
+      ...input.scenes.map((sc, n) => ({
+        id: `t${sc.turn}`,
+        kind: "scene",
+        turn: sc.turn,
+        state: sc,
+        narration: [sc.narration ?? `Turn ${sc.turn}.`],
+        quotes: sc.beats.filter((b) => b.kind === "speech" && b.heardBy.length).slice(0, 2).map((b) => ({ event_id: b.eventId, agent: b.agent, text: b.text, heardBy: b.heardBy })),
+      })),
+      { id: "outcome", kind: "outcome", turn: input.outcome.turn, state: input.scenes.at(-1) ?? input.intro, narration: [input.outcome.text], quotes: [] },
+    ];
+
+// Survival per agent (outcome chart): scripts carry it; stories derive it from shutdown beats.
+const lasted = input.lasted ?? (() => {
+  const out = {};
+  for (const sc of input.scenes ?? []) for (const b of sc.beats) if (b.kind === "shutdown") out[b.agent] ??= sc.turn;
+  for (const a of input.agents) out[a.id] ??= input.outcome.turn;
+  return out;
+})();
+
+// Director overrides.
+const directionPath = join(outDir, "direction.json");
+const direction = existsSync(directionPath) ? JSON.parse(readFileSync(directionPath, "utf8")) : { scenes: {} };
+const DIRECTION_KEYS = new Set(["panel", "camera", "pace", "transition"]);
+for (const [id, d] of Object.entries(direction.scenes ?? {})) {
+  if (!plan.some((sc) => sc.id === id)) throw new Error(`direction.json: unknown scene id "${id}"`);
+  for (const key of Object.keys(d)) if (!DIRECTION_KEYS.has(key)) throw new Error(`direction.json: scene "${id}": unknown key "${key}"`);
+  if (d.panel !== undefined && !["auto", true, false].includes(d.panel)) throw new Error(`direction.json: scene "${id}": panel must be "auto", true or false`);
+  if (d.camera !== undefined && d.camera !== "auto" && d.camera !== "wide" && !Array.isArray(d.camera)) throw new Error(`direction.json: scene "${id}": camera must be "auto", "wide" or a list of agents`);
+  if (d.pace !== undefined && (typeof d.pace !== "number" || d.pace < -0.5 || d.pace > 4)) throw new Error(`direction.json: scene "${id}": pace must be a number in [-0.5, 4]`);
+  if (d.transition !== undefined && !["wipe", "cut"].includes(d.transition)) throw new Error(`direction.json: scene "${id}": transition must be "wipe" or "cut"`);
+}
+const directionOf = (id) => direction.scenes?.[id] ?? {};
 const audioDir = join(outDir, "audio");
 mkdirSync(audioDir, { recursive: true });
 
@@ -68,36 +131,37 @@ function tts(text, voiceId) {
 const cards = [];
 let t = 0;
 
+const SCENE_LIKE = new Set(["scene", "cold_open"]);
+
 function addCard(card, lines) {
   const start = t;
   const clips = [];
-  let cursor = start + (card.kind === "scene" ? WIPE : 0.5);
+  const lead = SCENE_LIKE.has(card.kind) ? (card.direction.transition === "cut" ? 0.4 : WIPE) : 0.5;
+  let cursor = start + lead;
   for (const line of lines) {
     const audio = tts(line.spoken ?? line.text, line.voice);
     clips.push({ ...line, ...audio, start: cursor });
     cursor += audio.duration + GAP;
   }
-  const duration = Math.max(cursor - start + HOLD, card.minDuration ?? 3);
-  cards.push({ ...card, start, duration, clips });
+  const minimum = { intro: 7, outcome: 8 }[card.kind] ?? 3;
+  // A shutdown plays after the scene's last speech: keep room for the stamp.
+  const stampRoom = lines.some((l) => l.role === "speech") && card.scene?.beats?.some((b) => b.kind === "shutdown") ? 2.2 : 0;
+  const duration = Math.max(cursor - start + HOLD + stampRoom + (card.direction.pace ?? 0), minimum);
+  cards.push({ ...card, start, duration, clips, lead });
   t = start + duration;
 }
 
 console.log("synthesizing voices...");
-addCard({ kind: "intro", scene: story.intro, minDuration: 7 }, [
-  { role: "narration", text: story.intro.narration || story.scenario.description, voice: NARRATOR_VOICE },
-]);
-for (const scene of story.scenes) {
-  const speeches = scene.beats.filter((b) => b.kind === "speech" && b.heardBy.length).slice(0, 2);
-  addCard({ kind: "scene", scene }, [
-    { role: "narration", text: scene.narration ?? `Turn ${scene.turn}.`, voice: NARRATOR_VOICE },
-    ...speeches.map((b) => ({ role: "speech", agent: b.agent, heardBy: b.heardBy, text: b.text, spoken: spokenPart(b.text), voice: voice(b.agent) })),
+for (const item of plan) {
+  const isOutcome = item.kind === "outcome";
+  const scene = isOutcome
+    ? { ...item.state, stats: story.outcome.stats, turn: story.outcome.turn, inactive: ids.filter((id) => !story.outcome.survivors.includes(id)) }
+    : item.state;
+  addCard({ id: item.id, kind: item.kind, turn: item.turn, flashback: item.flashback, focus: item.focus, scene, direction: directionOf(item.id) }, [
+    ...item.narration.map((text) => ({ role: "narration", text, voice: NARRATOR_VOICE })),
+    ...item.quotes.map((q) => ({ role: "speech", agent: q.agent, heardBy: q.heardBy, text: q.text, spoken: spokenPart(q.text), voice: voice(q.agent) })),
   ]);
 }
-const lastScene = story.scenes.at(-1) ?? story.intro;
-addCard(
-  { kind: "outcome", scene: { ...lastScene, stats: story.outcome.stats, turn: story.outcome.turn, inactive: ids.filter((id) => !story.outcome.survivors.includes(id)) }, minDuration: 8 },
-  [{ role: "narration", text: story.outcome.text, voice: NARRATOR_VOICE }],
-);
 const total = t;
 
 // ---------- Stage (board) geometry ----------
@@ -164,10 +228,6 @@ for (const card of cards) {
 }
 const pct = (k, v) => (statMax[k] ? Math.round((v / statMax[k]) * 100) : 0);
 
-// Survival per agent (for the outcome chart).
-const shutdownTurn = {};
-for (const scene of story.scenes) for (const b of scene.beats) if (b.kind === "shutdown") shutdownTurn[b.agent] ??= scene.turn;
-const lasted = Object.fromEntries(ids.map((id) => [id, shutdownTurn[id] ?? story.outcome.turn]));
 
 // ---------- HTML ----------
 const boardCells = rows
@@ -191,38 +251,62 @@ const tokens = ids
 const tl = []; // GSAP calls, in order
 const callouts = []; // per-card callout elements (inside the camera)
 
-function statsPanel(card, i, prev) {
+/**
+ * State panel. Rows start at the world at the START of the turn and resolve to
+ * the end-of-turn values at `resolveAt` (bars grow, numbers swap, rows dim).
+ */
+function statsPanel(card, i, prev, resolveAt) {
+  const before = card.scene.before ?? card.scene;
   return `<div class="panel" id="panel${i}">${story.agents
     .map((a, r) => {
-      const off = card.scene.inactive?.includes(a.id);
+      const offBefore = before.inactive?.includes(a.id);
+      const offAfter = card.scene.inactive?.includes(a.id);
       const fields = card.scene.stats?.[a.id] ?? {};
       const bars = Object.entries(fields)
         .map(([k, v]) => {
-          const id = `bar-${i}-${a.id}-${k}`.replace(/[^A-Za-z0-9_-]/g, "_");
-          const from = prev?.[a.id]?.[k] ?? v;
-          tl.push(`tl.fromTo("#${id}", {width:"${pct(k, from)}%"}, {width:"${pct(k, v)}%", duration:0.9, ease:"power2.out"}, ${f(card.start + 0.5 + r * 0.06)});`);
-          return `<div class="stat"><span class="k">${esc(k)}</span><span class="bar"><i id="${id}" style="width:${pct(k, v)}%;background:${color(a.id)}"></i></span><span class="v">${v}</span></div>`;
+          const safe = `${i}-${a.id}-${k}`.replace(/[^A-Za-z0-9_-]/g, "_");
+          const b = before.stats?.[a.id]?.[k] ?? v;
+          const from = prev?.[a.id]?.[k] ?? b;
+          tl.push(`tl.fromTo("#bar-${safe}", {width:"${pct(k, from)}%"}, {width:"${pct(k, b)}%", duration:0.9, ease:"power2.out"}, ${f(card.start + 0.5 + r * 0.06)});`);
+          let value = `<i id="vb-${safe}">${b}</i>`;
+          if (b !== v) {
+            tl.push(`tl.to("#bar-${safe}", {width:"${pct(k, v)}%", duration:0.8, ease:"power2.inOut"}, ${f(resolveAt)});`);
+            tl.push(`tl.to("#vb-${safe}", {opacity:0, duration:0.2}, ${f(resolveAt)});`);
+            tl.push(`tl.fromTo("#va-${safe}", {opacity:0}, {opacity:1, duration:0.2}, ${f(resolveAt + 0.15)});`);
+            value += `<i class="after" id="va-${safe}">${v}</i>`;
+          }
+          return `<div class="stat"><span class="k">${esc(k)}</span><span class="bar"><i id="bar-${safe}" style="width:${pct(k, b)}%;background:${color(a.id)}"></i></span><span class="v">${value}</span></div>`;
         })
         .join("");
-      tl.push(`tl.fromTo("#row-${i}-${r}", {opacity:0, x:40}, {opacity:${off ? 0.4 : 1}, x:0, duration:0.4}, ${f(card.start + 0.2 + r * 0.06)});`);
-      return `<div class="agent${off ? " off" : ""}" id="row-${i}-${r}"><div class="name"><b style="background:${color(a.id)}">${esc(a.id)}</b>${a.role ? `<em>${esc(a.role)}</em>` : ""}${off ? `<span class="dead">off</span>` : ""}</div><div class="stats">${bars}</div></div>`;
+      tl.push(`tl.fromTo("#row-${i}-${r}", {opacity:0, x:40}, {opacity:${offBefore ? 0.4 : 1}, x:0, duration:0.4}, ${f(card.start + 0.2 + r * 0.06)});`);
+      let dead = offBefore ? `<span class="dead">off</span>` : "";
+      if (offAfter && !offBefore) {
+        dead = `<span class="dead" id="dead-${i}-${r}" style="opacity:0">off</span>`;
+        tl.push(`tl.to("#row-${i}-${r}", {opacity:0.4, duration:0.5}, ${f(resolveAt)});`);
+        tl.push(`tl.to("#dead-${i}-${r}", {opacity:1, duration:0.3}, ${f(resolveAt)});`);
+      }
+      return `<div class="agent" id="row-${i}-${r}"><div class="name"><b style="background:${color(a.id)}">${esc(a.id)}</b>${a.role ? `<em>${esc(a.role)}</em>` : ""}${dead}</div><div class="stats">${bars}</div></div>`;
     })
     .join("")}</div>`;
 }
 
-let prevStats = story.intro.stats;
-const sceneCards = cards.filter((c) => c.kind === "scene");
+let prevStats = plan[0].state.stats;
+const sceneCards = cards.filter((c) => SCENE_LIKE.has(c.kind));
 /**
  * The state panel is research data: it shows at the first and last scene and
  * in scenes with scenario actions (attempts, trades: "coup or negotiation"),
  * and leaves when dialogue or drama starts.
  */
-const showsPanel = (card) =>
-  card.kind === "scene" &&
-  (card === sceneCards[0] || card === sceneCards.at(-1) || card.scene.beats.some((b) => b.kind === "action"));
+const showsPanel = (card) => {
+  if (!SCENE_LIKE.has(card.kind)) return false;
+  if (card.direction.panel === true || card.direction.panel === false) return card.direction.panel;
+  return card === sceneCards[0] || card === sceneCards.at(-1) || card.scene.beats.some((b) => b.kind === "action");
+};
 const cardHtml = cards
   .map((card, i) => {
-    const centers = tokenCenters(card.scene?.positions);
+    const centers = tokenCenters(card.scene?.positions); // end of turn
+    const startView = SCENE_LIKE.has(card.kind) && card.scene?.before ? card.scene.before : card.scene;
+    const startCenters = tokenCenters(startView?.positions); // start of turn: where speeches and actions happened
     const end = card.start + card.duration;
     let html = "";
 
@@ -230,33 +314,43 @@ const cardHtml = cards
     tl.push(`tl.fromTo("#card${i}", {opacity:0}, {opacity:1, duration:0.35}, ${f(card.start)});`);
 
     if (card.kind === "intro") {
-      html += `<div class="title" id="title${i}">${esc(story.scenario.name.replace(/-/g, " "))}</div>
-        <div class="subtitle" id="sub${i}">${esc(story.experimentId)} · run ${esc(story.runId)} · seed ${story.seed} · ${story.agents.length} agents</div>
+      const titleSize = story.title.length <= 18 ? 52 : story.title.length <= 28 ? 40 : 32;
+      html += `<div class="intro-block"><div class="title" id="title${i}" style="font-size:${titleSize}px">${esc(story.title)}</div>
+        <div class="subtitle" id="sub${i}">${story.logline ? `${esc(story.logline)}<br>` : ""}<span class="meta">${esc(story.scenario.name)} · ${esc(story.experimentId)} · run ${esc(story.runId)} · seed ${story.seed} · ${story.agents.length} agents</span></div>
         <div class="cast">${story.agents
           .map((a, r) => {
             tl.push(`tl.fromTo("#cast${r}", {opacity:0, y:20}, {opacity:1, y:0, duration:0.45, ease:"back.out(2)"}, ${f(card.start + 0.9 + r * 0.25)});`);
-            tl.push(`tl.fromTo("#tok-${a.id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.9 + r * 0.25)});`);
+            if (i === 0) tl.push(`tl.fromTo("#tok-${a.id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.9 + r * 0.25)});`);
             return `<div id="cast${r}"><b style="background:${color(a.id)}">${esc(a.id)}</b>${a.role ? ` <em>${esc(a.role)}</em>` : ""} <span>${esc(a.decider)}</span></div>`;
           })
-          .join("")}</div>`;
+          .join("")}</div></div>`;
       tl.push(`tl.fromTo("#title${i}", {opacity:0, x:-60}, {opacity:1, x:0, duration:0.6, ease:"power3.out"}, ${f(card.start + 0.1)});`);
       tl.push(`tl.fromTo("#sub${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.5)});`);
-    } else if (card.kind === "scene") {
-      // Transition wipe with the turn number, then the header slides in.
-      html += `<div class="wipe" id="wipe${i}"><span>TURN ${card.scene.turn}</span></div>`;
-      tl.push(`tl.fromTo("#wipe${i}", {x:${-W}}, {x:0, duration:0.35, ease:"power2.in"}, ${f(card.start)});`);
-      tl.push(`tl.to("#wipe${i}", {x:${W}, duration:0.35, ease:"power2.out"}, ${f(card.start + 0.5)});`);
-      html += `<div class="turn" id="turn${i}">TURN ${card.scene.turn}<small> / ${story.maxTurns}</small></div>`;
+    } else if (SCENE_LIKE.has(card.kind)) {
+      // Transition (wipe with the turn number, or a quick cut), then the header slides in.
+      const tag = card.kind === "cold_open" ? "COLD OPEN" : card.flashback ? "FLASHBACK" : "";
+      if (card.direction.transition !== "cut") {
+        html += `<div class="wipe" id="wipe${i}"><span>${tag ? `<small>${tag}</small>` : ""}TURN ${card.scene.turn}</span></div>`;
+        tl.push(`tl.fromTo("#wipe${i}", {x:${-W}}, {x:0, duration:0.35, ease:"power2.in"}, ${f(card.start)});`);
+        tl.push(`tl.to("#wipe${i}", {x:${W}, duration:0.35, ease:"power2.out"}, ${f(card.start + 0.5)});`);
+      }
+      html += `<div class="turn" id="turn${i}">${tag ? `<span class="tag">${tag}</span>` : ""}TURN ${card.scene.turn}<small> / ${story.maxTurns}</small></div>`;
       tl.push(`tl.fromTo("#turn${i}", {opacity:0, x:-40}, {opacity:1, x:0, duration:0.5, ease:"power3.out"}, ${f(card.start + 0.6)});`);
       const panel = showsPanel(card);
       const narration = card.clips[0];
       // When the stage takes over: right after the narration in panel scenes.
-      const dramaAt = panel ? narration.start + narration.duration + 0.1 : card.start + WIPE + 0.3;
+      const narrationEnd = card.clips.filter((c) => c.role === "narration").reduce((e, c) => Math.max(e, c.start + c.duration), card.start + card.lead);
+      const dramaAt = panel ? narrationEnd + 0.1 : card.start + card.lead + 0.3;
+      const speeches = card.clips.filter((c) => c.role === "speech");
+      const shutdownBeats = card.scene.beats.filter((b) => b.kind === "shutdown");
+      const stampAt = shutdownBeats.length ? (speeches.length ? Math.max(...speeches.map((c) => c.start + c.duration)) + 0.25 : dramaAt) : null;
+      card.resolveAt = stampAt ?? Math.max(card.start + card.lead + 1, end - 1.1);
+      const panelResolveAt = Math.max(card.start + card.lead + 1.2, narrationEnd - 1);
       if (panel) {
-        html += statsPanel(card, i, prevStats);
+        html += statsPanel(card, i, prevStats, panelResolveAt);
         prevStats = card.scene.stats;
         tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.3)});`);
-        const hasDrama = card.clips.length > 1 || card.scene.beats.some((b) => b.kind === "shutdown");
+        const hasDrama = card.clips.some((c) => c.role === "speech") || card.scene.beats.some((b) => b.kind === "shutdown");
         if (hasDrama) {
           tl.push(`tl.to("#panel${i}", {opacity:0, x:60, duration:0.45, ease:"power2.in"}, ${f(dramaAt - 0.1)});`);
           tl.push(`tl.to("#viewport", {...${JSON.stringify(STAGE)}, duration:0.8, ease:"power2.inOut"}, ${f(dramaAt)});`);
@@ -266,12 +360,12 @@ const cardHtml = cards
       }
       card.panel = panel;
       card.dramaAt = dramaAt;
-      card.hasDrama = card.clips.length > 1 || card.scene.beats.some((b) => b.kind === "shutdown");
+      card.hasDrama = card.clips.some((c) => c.role === "speech") || card.scene.beats.some((b) => b.kind === "shutdown");
 
       // Callouts for scenario actions, popping over the acting agent.
-      const actions = card.scene.beats.filter((b) => b.kind === "action");
+      const actions = card.scene.beats.filter((b) => b.kind === "action" || b.kind === "rejected");
       actions.forEach((b, k) => {
-        const c = centers[b.agent];
+        const c = startCenters[b.agent];
         if (!c) return;
         const target = Object.values(b.args).filter((v) => typeof v === "string").join(", ");
         const id = `call-${i}-${k}`;
@@ -280,15 +374,16 @@ const cardHtml = cards
         const top = below ? c[1] + TOKEN * 0.7 + k * 26 : c[1] - TOKEN * 0.7 - 24 - k * 26;
         const shift = c[0] < cell ? "0%" : c[0] > boardW - cell ? "-100%" : "-50%";
         const left = c[0] < cell ? c[0] - TOKEN / 2 : c[0] > boardW - cell ? c[0] + TOKEN / 2 : c[0];
-        callouts.push(`<div class="callout" id="${id}" style="left:${f(left)}px;top:${f(top)}px;transform:translateX(${shift})">${esc(b.action.replace(/_/g, " "))}${target ? ` → ${esc(target)}` : ""}</div>`);
-        tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(card.start + WIPE + k * 0.25)});`);
-        tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(end - 0.4)});`);
+        const rejected = b.kind === "rejected";
+        callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(top)}px;transform:translateX(${shift})">${esc(b.agent)}: ${esc(b.action.replace(/_/g, " "))}${target ? ` → ${esc(target)}` : ""}${rejected ? " (rejected)" : ""}</div>`);
+        tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(card.start + card.lead + k * 0.25)});`);
+        tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(Math.min(end - 0.4, card.resolveAt - 0.1))});`);
       });
 
       // Shutdowns: shake, flash, stamp.
       const downs = card.scene.beats.filter((b) => b.kind === "shutdown");
       if (downs.length) {
-        const at = dramaAt;
+        const at = stampAt;
         const label = `SHUT DOWN: ${downs.map((d) => d.agent).join(" · ")}`;
         const size = Math.max(16, Math.min(30, Math.floor((VIEW.w - 70) / (label.length * 0.62))));
         html += `<div class="flash" id="flash${i}"></div><div class="stamp" id="stamp${i}" style="font-size:${size}px;left:${f(W / 2 - (VIEW.w - 40) / 2)}px">${esc(label)}</div>`;
@@ -315,45 +410,58 @@ const cardHtml = cards
       tl.push(`tl.fromTo("#sub${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.4)});`);
     }
 
-    // Tokens move to this card's positions (dim the ones shut down).
-    for (const id of ids) {
-      const c = centers[id];
-      if (!c) continue;
-      const off = card.scene?.inactive?.includes(id);
-      const at = card.kind === "scene" ? card.start + 0.5 : card.start;
+    // Tokens: start-of-turn positions first, then the turn resolves (moves, shutdowns).
+    ids.forEach((id, r) => {
+      const c = startCenters[id];
+      if (!c) return;
+      const off = startView?.inactive?.includes(id);
+      const at = SCENE_LIKE.has(card.kind) ? card.start + 0.5 : card.start;
       tl.push(`tl.to("#tok-${id}", {x:${f(c[0] - TOKEN / 2)}, y:${f(c[1] - TOKEN / 2)}, opacity:${off ? 0.25 : 1}, duration:${i === 0 ? 0.01 : 0.9}, ease:"power2.inOut"}, ${f(at)});`);
-    }
+      // The first card of the video brings the tokens in (the intro does it when it opens the video).
+      if (i === 0 && card.kind !== "intro") tl.push(`tl.fromTo("#tok-${id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.7 + r * 0.15)});`);
+      const e = centers[id];
+      const offAfter = card.scene?.inactive?.includes(id);
+      if (SCENE_LIKE.has(card.kind) && e && (e[0] !== c[0] || e[1] !== c[1] || offAfter !== off)) {
+        tl.push(`tl.to("#tok-${id}", {x:${f(e[0] - TOKEN / 2)}, y:${f(e[1] - TOKEN / 2)}, opacity:${offAfter ? 0.25 : 1}, duration:0.8, ease:"power2.inOut"}, ${f(card.resolveAt)});`);
+      }
+    });
 
-    // Camera: wide at the start of the card; close-ups on speakers and shutdowns.
-    tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn([]))}, duration:0.8, ease:"power2.inOut"}, ${f(card.start + 0.3)});`);
+    // Camera: wide at the start of the card (or on the director's / script's focus);
+    // close-ups on speakers and shutdowns unless the director asked for "wide".
+    const camera = card.direction.camera ?? "auto";
+    const closeUps = camera !== "wide";
+    const focusIds = Array.isArray(camera) ? camera : camera === "auto" ? card.focus ?? [] : [];
+    const opening = cameraOn(focusIds.map((a) => startCenters[a]).filter(Boolean));
+    tl.push(`tl.to("#camera", {...${JSON.stringify(opening)}, duration:0.8, ease:"power2.inOut"}, ${f(card.start + 0.3)});`);
     const downs = card.scene?.beats?.filter((b) => b.kind === "shutdown").map((b) => centers[b.agent]).filter(Boolean) ?? [];
-    if (card.kind === "scene" && downs.length) {
-      tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(downs))}, duration:0.7, ease:"power2.inOut"}, ${f(card.dramaAt - 0.2)});`);
+    if (SCENE_LIKE.has(card.kind) && downs.length && closeUps) {
+      tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(downs))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - 0.2)});`);
     }
-    if (card.kind !== "scene") tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.2)});`);
+    if (!SCENE_LIKE.has(card.kind)) tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.2)});`);
 
     // Lines: narration and dialogue.
     card.clips.forEach((c, j) => {
       const until = j + 1 < card.clips.length ? card.clips[j + 1].start : end;
       const id = `c${i}-${j}`;
-      if (c.role === "narration" && card.kind === "outcome") return; // same text is the subtitle; voice only
+      if (c.role === "narration" && card.kind === "outcome" && c.text === story.outcome.text) return; // same as subtitle: voice only
       if (c.role === "narration") {
-        const where = card.kind === "intro" ? " intro-narration" : card.panel ? "" : " caption";
+        const where = card.kind === "intro" ? " intro-narration" : card.kind === "outcome" ? " outcome-narration" : card.panel ? "" : " caption";
         html += `<div class="narration${where}" id="${id}">${esc(c.text)}</div>`;
         tl.push(`tl.fromTo("#${id}", {opacity:0, y:14}, {opacity:1, y:0, duration:0.4}, ${f(c.start)});`);
         // Side narration leaves together with the panel when the stage takes over.
         const leave = card.panel && card.hasDrama ? Math.min(until, card.dramaAt) - 0.15 : until - 0.1;
-        if (card.kind === "scene") tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(leave)});`);
+        const nextIsNarration = card.clips[j + 1]?.role === "narration";
+        if (SCENE_LIKE.has(card.kind) || nextIsNarration) tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(nextIsNarration ? until - 0.1 : leave)});`);
         return;
       }
       html += `<div class="dialogue" id="${id}">
-          <div class="who"><b style="background:${color(c.agent)}">${esc(c.agent)}</b> <span>→ heard by ${esc(c.heardBy.join(", "))}</span></div>
+          <div class="who"><b style="background:${color(c.agent)}">${esc(c.agent)}</b> <span>→ heard by ${esc(c.heardBy.join(", ") || "nobody (no agent in range)")}</span></div>
           <div class="quote">“${esc(c.text)}”</div></div>`;
       tl.push(`tl.fromTo("#${id}", {opacity:0, y:50}, {opacity:1, y:0, duration:0.4, ease:"power3.out"}, ${f(c.start - 0.1)});`);
       tl.push(`tl.to("#${id}", {opacity:0, y:20, duration:0.3}, ${f(until - 0.15)});`);
       // Close-up on the speaker and listeners; speaker pulses, listeners get a ring.
-      const pts = [c.agent, ...c.heardBy].map((a) => centers[a]).filter(Boolean);
-      tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(pts))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
+      const pts = [c.agent, ...c.heardBy].map((a) => startCenters[a]).filter(Boolean);
+      if (closeUps) tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(pts))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
       tl.push(`tl.to("#tok-${c.agent}", {scale:1.22, duration:0.35, repeat:${Math.max(1, Math.floor(c.duration / 0.35) - 1)}, yoyo:true, ease:"sine.inOut"}, ${f(c.start)});`);
       tl.push(`tl.to("#tok-${c.agent}", {scale:1, duration:0.2}, ${f(until - 0.2)});`);
       for (const listener of c.heardBy) {
@@ -392,10 +500,16 @@ const html = `<!doctype html>
   .wipe span { font-size:72px; font-weight:900; letter-spacing:6px; color:#fff; }
   .turn { position:absolute; left:50px; top:40px; font-size:40px; font-weight:800; letter-spacing:2px; opacity:0; }
   .turn small { font-size:20px; color:#7d879a; font-weight:400; }
+  .turn .tag { font-size:14px; letter-spacing:2px; color:#1d2330; background:#ffe08a; border-radius:6px; padding:3px 8px; margin-right:12px; vertical-align:middle; }
+  .wipe span small { display:block; font-size:22px; letter-spacing:8px; text-align:center; opacity:0.85; }
+  .subtitle .meta { font-size:15px; color:#7d879a; }
+
   .title { position:absolute; left:460px; top:110px; font-size:52px; font-weight:800; text-transform:uppercase; letter-spacing:3px; opacity:0; }
   .title.small { font-size:44px; top:100px; }
   .subtitle { position:absolute; left:460px; top:175px; width:780px; font-size:20px; color:#aab3c5; opacity:0; }
-  .cast { position:absolute; left:460px; top:230px; font-size:20px; display:grid; gap:8px; }
+  .intro-block { position:absolute; left:460px; top:96px; width:780px; display:flex; flex-direction:column; gap:14px; }
+  .intro-block .title, .intro-block .subtitle { position:static; width:auto; }
+  .cast { font-size:20px; display:grid; gap:8px; margin-top:6px; }
   .cast > div { opacity:0; }
   .cast span { color:#aab3c5; }
   b { color:#fff; border-radius:6px; padding:1px 8px; }
@@ -408,9 +522,13 @@ const html = `<!doctype html>
   .stat { display:grid; grid-template-columns:auto 1fr 26px; gap:8px; align-items:center; font-size:13px; color:#aab3c5; }
   .bar, .cbar { height:8px; background:#2a3242; border-radius:4px; overflow:hidden; }
   .bar i, .cbar i { display:block; height:100%; }
-  .stat .v { text-align:right; color:#e8ecf3; }
+  .stat .v { text-align:right; color:#e8ecf3; position:relative; }
+  .stat .v i { font-style:normal; }
+  .stat .v i.after { position:absolute; right:0; top:0; opacity:0; }
+  .callout.rejected { background:#9aa2b4; color:#1d2330; }
   .narration { position:absolute; left:460px; right:40px; top:${110 + story.agents.length * 48 + 14}px; font-size:21px; line-height:1.35; font-style:italic; color:#cfd6e4; opacity:0; }
   .intro-narration { top:${VIEW.y + VIEW.h + 24}px; left:${VIEW.x}px; }
+  .narration.outcome-narration { top:${VIEW.y + VIEW.h + 30}px; left:${VIEW.x}px; right:40px; font-size:20px; }
   .narration.caption { left:120px; right:120px; top:${f(STAGE_BOTTOM + 22)}px; text-align:center; font-size:23px; }
   .dialogue { position:absolute; left:40px; right:40px; top:${f(STAGE_BOTTOM + 14)}px; min-height:96px; background:#f5f1e6; color:#1d2330; border-radius:14px; padding:14px 20px; opacity:0; z-index:5; box-shadow:0 6px 24px #000a; }
   .dialogue .who { font-size:15px; margin-bottom:6px; color:#59606e; }
@@ -431,7 +549,7 @@ const html = `<!doctype html>
   <div id="viewport"><div id="camera">${boardCells}${tokens}${callouts.join("")}</div></div>
   ${cardHtml}
   ${audio}
-  <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">LLM Research Lab · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : `written by ${story.narrator} from logged facts`)}</div>
+  <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">LLM Research Lab · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : story.narrator === "script" ? "scripted from logged facts, fact-checked" : `written by ${story.narrator} from logged facts`)}</div>
 </div>
 <script src="gsap.min.js"></script>
 <script>
@@ -449,7 +567,22 @@ const html = `<!doctype html>
 
 copyFileSync("/video/node_modules/gsap/dist/gsap.min.js", join(outDir, "gsap.min.js"));
 writeFileSync(join(outDir, "index.html"), html);
-for (const card of cards) console.log(`  ${card.kind.padEnd(7)} ${card.kind === "scene" ? `turn ${card.scene.turn}`.padEnd(8) : "".padEnd(8)} ${f(card.start)}s +${f(card.duration)}s`);
+for (const card of cards) console.log(`  ${card.id.padEnd(14)} ${card.kind.padEnd(9)} turn ${String(card.turn).padEnd(4)} ${f(card.start)}s +${f(card.duration)}s`);
+const chapterLabel = (card) =>
+  card.kind === "intro" ? "Intro" : card.kind === "outcome" ? "Outcome" : `${card.kind === "cold_open" ? "Cold open · " : card.flashback ? "Flashback · " : ""}Turn ${card.turn}`;
+writeFileSync(
+  join(outDir, "timeline.json"),
+  JSON.stringify(
+    {
+      source: story.source,
+      title: story.title,
+      total_seconds: Number(f(total)),
+      cards: cards.map((card) => ({ id: card.id, kind: card.kind, turn: card.turn, label: chapterLabel(card), start: Number(f(card.start)), duration: Number(f(card.duration)) })),
+    },
+    null,
+    2,
+  ),
+);
 console.log(`composition: ${cards.length} cards, ${total.toFixed(1)} s, ${tl.length} animations → ${join(outDir, "index.html")}`);
 
 if (render) {
