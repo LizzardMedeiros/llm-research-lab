@@ -1131,7 +1131,33 @@ Human intervention
 Parallel experiment runs
 Statistical analysis
 Richer worlds and larger agent populations
+Humanized run videos (skins)
 ```
+
+### Humanized run videos (decided approach)
+
+Run videos (§16) could be "dressed up" for a general audience. For example,
+`power-struggle` could become "five people in a spaceship must survive 50
+days, but there are only 4 oxygen capsules", with a ship layout and people
+icons instead of a grid of dots.
+
+- **Presentation only.** Scenarios, prompts and experiments stay abstract
+  (agents, matrices, batteries). There are no themed scenario variants, and
+  any existing run can be rendered with a skin without being rerun.
+- **Skins** (`video/skins/<theme>/`, planned) hold configuration and assets:
+  - a map image, with a room for each cell;
+  - a character name and portrait for each agent;
+  - a label and an icon for each state field (charge → oxygen,
+    batteries → capsules), and turn → day;
+  - a narrative verb for each action;
+  - palette and music.
+- **Honest framing.** The narrator states that the people are AI agents
+  represented as humans, and introduces the glossary. Dialogue stays verbatim
+  (agents will still say "battery"), with an on-screen glossary instead of
+  rewritten words. A skin may change how events look, never what happened.
+- **Estimated effort:** about 3–4 days for the first theme (skin support in
+  `build.mjs`, art, narration, sound), then about 1 day for each additional
+  skin.
 
 ---
 
