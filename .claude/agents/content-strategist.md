@@ -81,6 +81,13 @@ a compelling, **strictly factual** episode script in English.
   - A model's own explanation (the `rationale` in agent history) may be
     mentioned only as what the agent *wrote* or *reported*.
 - `focus` (optional) names the agents the camera should favor.
+- **Series frame (added by the video, do not write it):** the narrator is
+  "the Observer" of the series "AI Lab Rats" (`video/series.json`). The
+  video opens the intro with the Observer's greeting (who it is, that these
+  are AI agents in a simulation, that dialogue is verbatim) and closes with
+  an end card and sign-off. Your intro narration follows the greeting, so
+  start with the experiment itself and don't repeat the greeting. Narration
+  stays in the third person about the agents.
 
 ## Self-check (mandatory before you finish)
 1. `docker compose run --rm lab npm run -s script:check -- video/productions/<slug>/script.json`

@@ -40,6 +40,8 @@ export interface Story {
   scenario: { name: string; description: string; map: string[]; blocked: string[] };
   seed: number;
   maxTurns: number;
+  /** Frozen run rules shown on the experiment card: numeric scenario params and perception mode. */
+  rules: { params: Record<string, number>; perception?: string };
   agents: Array<{ id: string; role?: string; decider: string; goal?: string }>;
   /** Tool descriptions of the run's actions (what each action means). */
   actions: Array<{ name: string; description: string }>;
@@ -217,6 +219,10 @@ export function runMeta(index: RunIndex) {
     },
     seed: p.seed as number,
     maxTurns: p.scenario.rules.end.max_turns as number,
+    rules: {
+      params: Object.fromEntries(Object.entries((p.scenario.params ?? {}) as Record<string, unknown>).filter(([, v]) => typeof v === "number")) as Record<string, number>,
+      ...(typeof p.scenario.rules?.perception?.mode === "string" ? { perception: p.scenario.rules.perception.mode as string } : {}),
+    },
     agents: p.agents.map((a: any) => ({
       id: a.id,
       role: a.role ?? undefined,

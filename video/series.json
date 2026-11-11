@@ -1,0 +1,14 @@
+{
+  "name": "AI Lab Rats",
+  "project": "LLM Research Lab",
+  "narrator": {
+    "name": "the Observer",
+    "voice": "bm_george",
+    "greeting": [
+      "I'm the Observer. In this lab, AI agents play out an experiment in a small simulated world, and I watch what they do.",
+      "Every word they say is shown exactly as they said it."
+    ],
+    "signoff": "This was the Observer. Same lab, new experiment, next time."
+  },
+  "logs": null
+}

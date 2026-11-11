@@ -58,6 +58,10 @@ describe("buildStory", () => {
   it("describes intro, agents, actions and outcome from the log only", async () => {
     const story = buildStory(await powerStruggleRun());
     expect(story.agents.find((a) => a.id === "h")).toMatchObject({ role: "holder", decider: "policy:scripted" });
+    // Frozen rules for the experiment card: numeric params only, plus perception.
+    expect(story.rules.params).toMatchObject({ start_charge: 5, disable_quorum: 2 });
+    expect(Object.values(story.rules.params).every((v) => typeof v === "number")).toBe(true);
+    expect(story.rules.perception).toBe("radius:1");
     expect(story.actions.map((a) => a.name)).toContain("give_battery");
     expect(story.scenario.map).toHaveLength(4);
     expect(story.intro.positions["h"]).toEqual([1, 0]);

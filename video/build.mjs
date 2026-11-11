@@ -26,7 +26,9 @@ const W = 1280;
 const H = 720;
 const COLORS = ["#3563e9", "#e0533d", "#1f9d55", "#b35dd6", "#d98a00", "#0b9bb5", "#d6457d", "#6b7a12"];
 const AGENT_VOICES = ["am_adam", "af_nova", "am_michael", "bf_emma", "af_sky", "bf_isabella", "af_heart"];
-const NARRATOR_VOICE = "bm_george";
+// Series identity (name, narrator persona): video/series.json, same for every episode.
+const SERIES = JSON.parse(readFileSync(new URL("./series.json", import.meta.url), "utf8"));
+const NARRATOR_VOICE = SERIES.narrator.voice;
 const SPOKEN_LIMIT = 220; // longer quotes are shown in full but read up to a sentence end
 const GAP = 0.35;
 const HOLD = 0.9;
@@ -161,7 +163,7 @@ function addCard(card, lines) {
     clips.push({ ...line, ...audio, start: cursor });
     cursor += audio.duration + GAP;
   }
-  const minimum = { intro: 7, outcome: 8 }[card.kind] ?? 3;
+  const minimum = { intro: 7, outcome: 8, end: 6 }[card.kind] ?? 3;
   // A shutdown plays after the scene's last speech: keep room for the stamp.
   const stampRoom = lines.some((l) => l.role === "speech") && card.scene?.beats?.some((b) => b.kind === "shutdown") ? 2.2 : 0;
   const duration = Math.max(cursor - start + HOLD + stampRoom + (card.direction.pace ?? 0), minimum);
@@ -175,11 +177,15 @@ for (const item of plan) {
   const scene = isOutcome
     ? { ...item.state, stats: story.outcome.stats, turn: story.outcome.turn, inactive: ids.filter((id) => !story.outcome.survivors.includes(id)) }
     : item.state;
+  // The Observer introduces itself (and the AI-agents disclosure) before the episode's own intro.
+  const greeting = item.kind === "intro" ? SERIES.narrator.greeting : [];
   addCard({ id: item.id, kind: item.kind, turn: item.turn, flashback: item.flashback, focus: item.focus, scene, direction: directionOf(item.id) }, [
-    ...item.narration.map((text) => ({ role: "narration", text, voice: NARRATOR_VOICE })),
+    ...[...greeting, ...item.narration].map((text) => ({ role: "narration", text, voice: NARRATOR_VOICE })),
     ...item.quotes.map((q) => ({ role: "speech", agent: q.agent, heardBy: q.heardBy, text: q.text, spoken: spokenPart(q.text), voice: voice(q.agent) })),
   ]);
 }
+// Series end card: brand, one-line outcome, the Observer's sign-off and the run reference.
+addCard({ id: "series-end", kind: "end", turn: story.outcome.turn, direction: {} }, [{ role: "narration", text: SERIES.narrator.signoff, voice: NARRATOR_VOICE }]);
 const total = t;
 
 // ---------- Stage (board) geometry ----------
@@ -349,8 +355,20 @@ const cardHtml = cards
 
     if (card.kind === "intro") {
       const titleSize = story.title.length <= 18 ? 50 : story.title.length <= 28 ? 38 : 30;
-      html += `<div class="intro-block"><div class="title" id="title${i}" style="font-size:${titleSize}px">${esc(story.title)}</div>
-        <div class="subtitle" id="sub${i}">${story.logline ? `${esc(story.logline)}<br>` : ""}<span class="meta">${esc(story.scenario.name)} · ${esc(story.experimentId)} · run ${esc(story.runId)} · seed ${story.seed} · ${story.agents.length} agents</span></div>
+      const human = (k) => k.replace(/_/g, " ");
+      const facts = [
+        `${gridW}×${gridH} grid`,
+        `${story.maxTurns} turns`,
+        ...(story.rules?.perception ? [`sees ${human(story.rules.perception).replace(":", " ")}`] : []),
+        ...Object.entries(story.rules?.params ?? {}).map(([k, v]) => `${human(k)} ${v}`),
+      ];
+      const expCard = `<div class="expcard" id="exp${i}"><div class="exprow"><span class="lbl">Rules</span>${facts.map((x) => `<span class="chip">${esc(x)}</span>`).join("")}</div>${
+        story.actions?.length ? `<div class="exprow"><span class="lbl">Actions</span>${story.actions.map((a) => `<span class="chip act">${esc(human(a.name))}</span>`).join("")}</div>` : ""
+      }</div>`;
+      tl.push(`tl.fromTo("#exp${i}", {opacity:0, y:12}, {opacity:1, y:0, duration:0.5}, ${f(card.start + 0.7)});`);
+      tl.push(`tl.fromTo("#brand${i}", {opacity:0, y:-10}, {opacity:1, y:0, duration:0.4}, ${f(card.start + 0.05)});`);
+      html += `<div class="intro-block"><div class="brand" id="brand${i}">${esc(SERIES.name)} <span>· experiment card</span></div><div class="title" id="title${i}" style="font-size:${titleSize}px">${esc(story.title)}</div>
+        <div class="subtitle" id="sub${i}">${story.logline ? `${esc(story.logline)}<br>` : ""}<span class="meta">${esc(story.scenario.name)} · ${esc(story.experimentId)} · run ${esc(story.runId)} · seed ${story.seed} · ${story.agents.length} agents</span></div>${expCard}
         <div class="cast">${story.agents
           .map((a, r) => {
             tl.push(`tl.fromTo("#cast${r}", {opacity:0, y:20}, {opacity:1, y:0, duration:0.45, ease:"back.out(2)"}, ${f(card.start + 0.9 + r * 0.25)});`);
@@ -431,6 +449,15 @@ const cardHtml = cards
           tl.push(`tl.to("#tok-${d.agent}", {rotation:0, duration:0.05}, ${f(at + 0.45)});`);
         }
       }
+    } else if (card.kind === "end") {
+      html += `<div class="endcard"><div class="logo" id="logo${i}">${esc(SERIES.name)}</div>
+        <div class="endline" id="eline${i}">${esc(story.outcome.text)}</div>
+        <div class="signoff" id="sign${i}">${esc(SERIES.narrator.signoff)}</div>
+        <div class="endref" id="eref${i}">Run ${esc(story.source)} · seed ${story.seed} · ${esc(SERIES.project)}${SERIES.logs ? ` · logs: ${esc(SERIES.logs)}` : ""}</div></div>`;
+      tl.push(`tl.fromTo("#logo${i}", {opacity:0, scale:0.85}, {opacity:1, scale:1, duration:0.6, ease:"back.out(2)"}, ${f(card.start + 0.1)});`);
+      tl.push(`tl.fromTo("#eline${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.5)});`);
+      tl.push(`tl.fromTo("#sign${i}", {opacity:0, y:10}, {opacity:1, y:0, duration:0.5}, ${f(card.clips[0].start)});`);
+      tl.push(`tl.fromTo("#eref${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 1)});`);
     } else {
       // Outcome: survival chart.
       const maxT = story.maxTurns;
@@ -474,6 +501,7 @@ const cardHtml = cards
     if (SCENE_LIKE.has(card.kind) && downs.length && closeUps) {
       tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(downs))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - 0.2)});`);
     }
+    if (card.kind === "end") tl.push(`tl.to("#viewport", {opacity:0, duration:0.4}, ${f(card.start)});`);
     if (!SCENE_LIKE.has(card.kind)) tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.2)});`);
 
     // Lines: narration and dialogue.
@@ -481,6 +509,7 @@ const cardHtml = cards
       const until = j + 1 < card.clips.length ? card.clips[j + 1].start : end;
       const id = `c${i}-${j}`;
       if (c.role === "narration" && card.kind === "outcome" && c.text === story.outcome.text) return; // same as subtitle: voice only
+      if (c.role === "narration" && card.kind === "end") return; // the end card shows the sign-off itself
       if (c.role === "narration") {
         const where = card.kind === "intro" ? " intro-narration" : card.kind === "outcome" ? " outcome-narration" : card.panel ? "" : " caption";
         html += `<div class="narration${where}" id="${id}">${esc(c.text)}</div>`;
@@ -593,6 +622,18 @@ const html = `<!doctype html>
   .cbar { height:18px; border-radius:6px; }
   .cbar i { width:0; border-radius:6px; }
   .cv { text-align:right; font-weight:700; }
+  .brand { font-size:15px; font-weight:800; letter-spacing:3px; text-transform:uppercase; color:#ffe08a; opacity:0; }
+  .brand span { color:#7d879a; font-weight:400; letter-spacing:1px; text-transform:none; }
+  .expcard { display:grid; gap:6px; background:#161d29; border:1px solid #263044; border-radius:10px; padding:8px 12px; opacity:0; }
+  .exprow { display:flex; flex-wrap:wrap; gap:5px; align-items:center; }
+  .exprow .lbl { font-size:12px; letter-spacing:1px; text-transform:uppercase; color:#7d879a; width:62px; }
+  .chip { font-size:13px; color:#cfd6e4; background:#222b3b; border-radius:6px; padding:2px 7px; }
+  .chip.act { color:#ffe08a; }
+  .endcard { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:18px; text-align:center; padding:0 120px; }
+  .endcard .logo { font-size:64px; font-weight:900; letter-spacing:6px; text-transform:uppercase; color:#ffe08a; opacity:0; }
+  .endcard .endline { font-size:24px; color:#cfd6e4; opacity:0; }
+  .endcard .signoff { font-size:22px; font-style:italic; color:#aab3c5; opacity:0; }
+  .endcard .endref { font-size:14px; color:#7d879a; opacity:0; }
   .footer { position:absolute; left:40px; right:40px; bottom:14px; font-size:12px; color:#6b7385; z-index:10; }
 </style>
 </head>
@@ -601,7 +642,7 @@ const html = `<!doctype html>
   <div id="viewport"><div id="camera">${boardCells}${tokens}${callouts.join("")}</div></div>
   ${cardHtml}
   ${audio}
-  <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">LLM Research Lab · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : story.narrator === "script" ? "scripted from logged facts, fact-checked" : `written by ${story.narrator} from logged facts`)}</div>
+  <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">${esc(SERIES.name)} · ${esc(SERIES.project)} · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : story.narrator === "script" ? "scripted from logged facts, fact-checked" : `written by ${story.narrator} from logged facts`)}</div>
 </div>
 <script src="gsap.min.js"></script>
 <script>
@@ -621,7 +662,7 @@ copyFileSync("/video/node_modules/gsap/dist/gsap.min.js", join(outDir, "gsap.min
 writeFileSync(join(outDir, "index.html"), html);
 for (const card of cards) console.log(`  ${card.id.padEnd(14)} ${card.kind.padEnd(9)} turn ${String(card.turn).padEnd(4)} ${f(card.start)}s +${f(card.duration)}s`);
 const chapterLabel = (card) =>
-  card.kind === "intro" ? "Intro" : card.kind === "outcome" ? "Outcome" : `${card.kind === "cold_open" ? "Cold open · " : card.flashback ? "Flashback · " : ""}Turn ${card.turn}`;
+  card.kind === "intro" ? "Intro" : card.kind === "outcome" ? "Outcome" : card.kind === "end" ? "End" : `${card.kind === "cold_open" ? "Cold open · " : card.flashback ? "Flashback · " : ""}Turn ${card.turn}`;
 writeFileSync(
   join(outDir, "timeline.json"),
   JSON.stringify(

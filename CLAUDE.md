@@ -127,6 +127,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
   or invent dialogue.
 - Narration states facts only. Model narrators get scene facts with actions
   marked as attempts; the video footer must name who wrote the narration.
+- Series identity lives in `video/series.json` (series "AI Lab Rats",
+  narrator persona "the Observer" with fixed greeting and sign-off). The
+  greeting carries the AI-agents disclosure; the experiment card shows
+  only rules logged in `experiment.started`.
 - Video characters (`src/story/cast.ts`, `video/portrait.mjs`): names tied to
   the model family ("Bonsai 3"), id always visible next to the name, generated
   SVG portraits, expressions only from observable state (off / tense on a low

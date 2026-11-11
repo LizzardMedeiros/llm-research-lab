@@ -83,6 +83,25 @@ the seed of a future skill: keep it current whenever the video changes.
   (`.narration.intro-narration`). Spanning the full width, it collided with
   a taller title + cast block.
 
+## 2c. Series identity (humanization phase 3)
+
+- Series config: `video/series.json`, the same for every episode: series
+  name ("AI Lab Rats"), project name, narrator persona and its fixed lines,
+  optional public `logs` link. Change identity there, never per episode.
+- **Narrator persona: the Observer**, a voice that watches the lab, not a
+  pretend human. Its greeting opens the intro card, before the script's
+  intro narration, and carries the disclosure: AI agents, a simulated world,
+  dialogue shown exactly as said. Scripts never repeat or rewrite it.
+- **Experiment card** (intro): brand badge "AI LAB RATS · experiment card",
+  title, logline, run meta, then a Rules row (grid, turns, perception,
+  numeric scenario params, all from `experiment.started`) and an Actions
+  row, then the cast. Nothing on it is typed by hand.
+- **End card** (`series-end`, after the outcome, ≥ 6 s): logo, the outcome
+  line, the Observer's sign-off (voiced) and the run reference (run, seed,
+  project; logs link only when `logs` is set). The board fades out.
+- Not adopted (user choice, 2026-11-11): opening sting, episode numbers.
+- The footer starts with the series and project names.
+
 ## 3. Layout: two modes
 
 - **Side mode:** board on the left, state panel on the right, narration
