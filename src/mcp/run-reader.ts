@@ -222,6 +222,9 @@ export function compactEvent(event: LabEvent): Record<string, unknown> {
         ...base,
         tool_calls: (p["toolCalls"] as Array<{ name: string; rawArguments: string }>).map((c) => `${c.name} ${c.rawArguments}`),
         text: p["text"],
+        ...((p["reasoning"] as { content?: string } | undefined)?.content
+          ? { reported_reasoning: `${(p["reasoning"] as { content: string }).content.slice(0, 600)}${(p["reasoning"] as { content: string }).content.length > 600 ? "…" : ""}` }
+          : {}),
         stop_reason: p["stopReason"],
         latency_ms: p["latencyMs"],
         usage: p["usage"],

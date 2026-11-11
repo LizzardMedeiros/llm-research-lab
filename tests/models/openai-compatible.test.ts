@@ -78,6 +78,18 @@ describe("OpenAICompatibleProvider", () => {
   });
 });
 
+describe("reasoning field", () => {
+  it("records server-exposed reasoning as model-reported, from either field name", async () => {
+    for (const field of ["reasoning", "reasoning_content"]) {
+      const { impl } = fakeFetch([ok({ content: "", [field]: "  I should move north.  ", tool_calls: [{ id: "c1", function: { name: "wait", arguments: "{}" } }] })]);
+      const res = await make(impl).complete(request);
+      expect(res.reasoning).toEqual({ type: "model_reported", source: "provider_reasoning_field", content: "I should move north." });
+    }
+    const { impl } = fakeFetch([ok({ content: "hi" })]);
+    expect((await make(impl).complete(request)).reasoning).toBeUndefined();
+  });
+});
+
 describe("parseToolCall", () => {
   it("treats empty arguments as {}", () => {
     expect(parseToolCall("wait", "  ").arguments).toEqual({});

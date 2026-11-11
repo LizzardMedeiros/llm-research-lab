@@ -21,6 +21,10 @@ interface ChatCompletionResponse {
     finish_reason?: string | null;
     message?: {
       content?: string | null;
+      /** Ollama /v1 */
+      reasoning?: string | null;
+      /** llama.cpp, vLLM, DeepSeek */
+      reasoning_content?: string | null;
       tool_calls?: Array<{
         id?: string;
         function?: { name?: string; arguments?: string | null };
@@ -87,6 +91,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
       ...(json.model && json.model !== request.model ? { servedModel: json.model } : {}),
       toolCalls,
       text: choice.message.content ?? "",
+      ...reasoningOf(choice.message),
       stopReason: (choice.finish_reason ?? "unknown").toLowerCase(),
       usage: {
         ...(json.usage?.prompt_tokens !== undefined ? { inputTokens: json.usage.prompt_tokens } : {}),
@@ -118,6 +123,12 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
     return (await response.json()) as ChatCompletionResponse;
   }
+}
+
+/** Server-exposed reasoning text, if any (model-reported, not internal reasoning). */
+export function reasoningOf(message: { reasoning?: string | null; reasoning_content?: string | null }) {
+  const content = (message.reasoning ?? message.reasoning_content ?? "").trim();
+  return content ? { reasoning: { type: "model_reported" as const, source: "provider_reasoning_field" as const, content } } : {};
 }
 
 /** Empty arguments mean "no arguments" (llama.cpp returns "" for them). */

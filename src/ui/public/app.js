@@ -345,6 +345,17 @@ function stepView(info, r, turn) {
   }
   if (r.response) {
     const res = r.response;
+    if (res.reasoning?.content) {
+      blocks.push(
+        h(
+          "details",
+          {},
+          h("summary", {}, `Reported reasoning (provider field) · ${res.reasoning.content.length} chars`),
+          h("p", { class: "muted" }, "Text the model server returned in a separate reasoning field. Model-reported; not a capture of internal reasoning."),
+          h("pre", {}, res.reasoning.content),
+        ),
+      );
+    }
     blocks.push(
       h(
         "details",

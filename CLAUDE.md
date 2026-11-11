@@ -149,6 +149,10 @@ spec; read it before architectural changes and keep it in sync with decisions.
 ### Reasoning
 - Never claim to capture chain-of-thought. Model explanations are stored as
   `rationale: { type: "model_reported", content }`.
+- Server-exposed reasoning fields (Ollama `reasoning`, llama.cpp
+  `reasoning_content`) are recorded on `agent.model_response` as
+  `reasoning: { type: "model_reported", source: "provider_reasoning_field", content }`
+  and presented with that caveat (UI, Observer).
 
 ### Providers and policies
 - Protocols (code, `src/models/`) are separate from endpoints (config,

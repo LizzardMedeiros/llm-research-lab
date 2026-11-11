@@ -703,6 +703,25 @@ A model's explanation is always represented as a reported rationale:
 This must not be interpreted as direct access to the model's internal
 reasoning process.
 
+Some servers return reasoning text in a separate field (Ollama `reasoning`,
+llama.cpp/vLLM/DeepSeek `reasoning_content`). The `openai-compatible`
+adapter records it in `agent.model_response`:
+
+```json
+{
+  "reasoning": {
+    "type": "model_reported",
+    "source": "provider_reasoning_field",
+    "content": "Okay, let me figure out how to handle this..."
+  }
+}
+```
+
+It is what the server chose to expose, under the same caveat: model-reported
+text, not a capture of internal reasoning. The UI shows it in a separate,
+collapsed block, and the Observer includes an excerpt. Claude's thinking is
+not recorded: current models return it omitted or summarized by default.
+
 ---
 
 # 11. UI

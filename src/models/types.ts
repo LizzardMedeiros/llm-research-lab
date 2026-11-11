@@ -57,6 +57,12 @@ export interface ModelResponse {
   text: string;
   /** Provider stop reason, normalized to lower case (e.g. "tool_use", "stop", "refusal"). */
   stopReason: string;
+  /**
+   * Reasoning text the server returned in a separate field (e.g. Ollama
+   * `reasoning`, llama.cpp `reasoning_content`). It is what the provider
+   * exposed, model-reported: never a capture of internal reasoning.
+   */
+  reasoning?: { type: "model_reported"; source: "provider_reasoning_field"; content: string };
   usage: ModelUsage;
   latencyMs: number;
 }
