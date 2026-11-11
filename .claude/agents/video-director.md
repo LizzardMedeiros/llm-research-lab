@@ -41,11 +41,12 @@ Unknown keys or scene ids fail the build.
    `docker compose --profile video run --rm video node /app/video/build.mjs /app/video/productions/<slug>/script.resolved.json --quality draft`
    It prints every card's id, start and duration and writes
    `timeline.json`.
-3. Review like a director (DIRECTION.md §7): extract frames at the start,
-   middle and end of each card, plus every dialogue and shutdown moment,
-   into contact sheets with ffmpeg `xstack` inside the video container.
-   Look at them with Read. Check legibility, overlaps, clipped callouts,
-   framing, panel timing and pacing.
+3. Review like a director (DIRECTION.md §7):
+   `docker compose --profile video run --rm video node /app/video/review.mjs /app/video/productions/<slug> --at <dialogue/shutdown seconds>`
+   writes labeled contact sheets (start, middle and end of every card, plus
+   `--at` moments) to `review/`. Look at them with Read. Check legibility,
+   overlaps, clipped callouts, framing, panel timing and pacing, using the
+   checklist in `.claude/skills/video-direction/SKILL.md` §2.
 4. Iterate on `direction.json` (at most 3 drafts). If a problem can only be
    fixed in `build.mjs`, do **not** edit it. Describe the problem and the
    proposed rule under "## 8. Proposed adjustments" in `video/DIRECTION.md`,

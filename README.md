@@ -1133,6 +1133,11 @@ docker compose --profile video run --rm video \
 
   Outputs go to `video/productions/<exp>-<run>/` (gitignored). Nothing is
   uploaded.
+- **Directing and reviewing:** the `video-direction` skill is the procedure:
+  draft, review, fix, final render, verification, and recording. Review
+  sheets come from `node /app/video/review.mjs <folder>` (in the video
+  container): labeled frames at the start, middle and end of every card,
+  built from `timeline.json`.
 - **Direction notes:** `video/DIRECTION.md` records the visual and
   technical decisions (layout modes, when the state panel shows, motion
   language, HyperFrames lessons, review process).
@@ -1268,9 +1273,17 @@ icons instead of a grid of dots.
   represented as humans, and introduces the glossary. Dialogue stays verbatim
   (agents will still say "battery"), with an on-screen glossary instead of
   rewritten words. A skin may change how events look, never what happened.
-- **Estimated effort:** about 3–4 days for the first theme (skin support in
-  `build.mjs`, art, narration, sound), then about 1 day for each additional
-  skin.
+- **Phases** (work order 1 → 5 → 3 → 2, then 4):
+  1. characters: name, portrait, voice, model plate;
+  2. data-driven atmosphere: music and sound follow charge, coups and
+     shutdowns;
+  3. narrator persona and series identity;
+  4. themed worlds (the spaceship layout);
+  5. recurring cast: the same character is always the same model across
+     episodes.
+
+  Phase 4 is the most expensive. It is parked as an open plan, to be
+  evaluated and applied in parts: `video/plans/themed-world.md`.
 
 ---
 

@@ -104,12 +104,14 @@ the seed of a future skill: keep it current whenever the video changes.
 
 ## 7. Review process
 
-- After every change, render (`--quality draft` while iterating, `looks`
-  for the final cut), then extract frames at known card times (the build
-  prints each card's start and duration) into a contact sheet with ffmpeg
-  `xstack` and look at it. Check at least: a panel scene during narration,
-  the same scene during dialogue, a stage scene, a shutdown, and the
-  outcome.
+- The procedure is the `video-direction` skill
+  (`.claude/skills/video-direction/SKILL.md`): draft render, review,
+  fix (`direction.json` first, `build.mjs` only for general problems),
+  final render, verification, and recording here.
+- `video/review.mjs <folder> [--at s,…]` builds labeled contact sheets
+  from `timeline.json`: start, middle and end of every card, plus chosen
+  moments. Check at least a panel scene during narration, the same scene
+  during dialogue, a stage scene, a shutdown, and the outcome.
 - Verify the file, not the log: `ffprobe` stream durations and
   `volumedetect` for audio.
 

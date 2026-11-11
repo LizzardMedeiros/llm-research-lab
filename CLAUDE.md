@@ -188,4 +188,6 @@ user approval before implementation.
   `copywriter` (used by the `youtube-episode` skill).
 - `.claude/skills/youtube-episode/` — run → YouTube episode pipeline (script,
   fact-check gate, user approval, render, copy).
+- `.claude/skills/video-direction/` — render → review (`video/review.mjs`
+  contact sheets) → fix → verify → record in `video/DIRECTION.md`.
 - `.mcp.json` — MCP servers for Claude Code: `lab-observer` (read-only run analysis).
