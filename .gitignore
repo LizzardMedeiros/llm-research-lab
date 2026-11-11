@@ -5,7 +5,7 @@ dist/
 !.env.example
 
 # Generated experiment logs
-events/
+/events/
 
 # Local Claude Code settings
 .claude/settings.local.json
