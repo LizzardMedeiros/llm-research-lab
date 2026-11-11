@@ -103,6 +103,12 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - `environment.transition` carries a full world snapshot; a run must be
   reconstructable from the JSONL alone.
 - Do not change the event envelope without updating README §8.
+- Terminal events: `experiment.finished`, `experiment.failed`,
+  `experiment.interrupted` (written on SIGINT/SIGTERM; the `lab` service needs
+  `init: true` + `TINI_KILL_PROCESS_GROUP=1` for signals to reach node).
+  A run with no terminal event and no growth for `LAB_STALE_MINUTES` (10) is
+  reported `interrupted` with `inferred: true` — inferred by readers, never
+  written into the log. Incomplete runs never enter batch metrics.
 - MCP server (`src/mcp/`): separate stdio process, read-only over
   `events/**/*.jsonl`. Derive everything from events (`run-reader.ts`, pure
   functions); never import engine state. Registered for Claude Code in

@@ -7,7 +7,14 @@ import type { LabEvent } from "../events/event.js";
  * The JSONL is the only source: everything here is derived from events.
  */
 
-export type RunStatus = "running" | "finished" | "failed";
+export type RunStatus = "running" | "finished" | "failed" | "interrupted";
+
+/**
+ * A run with no terminal event and no new event for this long is reported as
+ * interrupted (the process died without recording it). Inferred, never
+ * written: logs are permanent records. Override with LAB_STALE_MINUTES.
+ */
+export const STALE_MS = Number(process.env["LAB_STALE_MINUTES"] ?? 10) * 60_000;
 
 export interface RunInfo {
   /** "<experiment_id>/<run_id>" */
@@ -23,6 +30,8 @@ export interface LoadedRun extends RunInfo {
   status: RunStatus;
   lastTurn: number;
   maxTurns: number | null;
+  /** Set when status is "interrupted": recorded by the engine, or inferred from inactivity. */
+  interruption?: { inferred: boolean; turn: number; reason: string };
 }
 
 export function listRunFiles(eventsDir: string): RunInfo[] {
@@ -67,7 +76,7 @@ export function parseEvents(text: string): LabEvent[] {
 }
 
 /** `ref` is "<experiment_id>/<run_id>", "<experiment_id>" (its latest run), or omitted (latest run overall). */
-export function loadRun(eventsDir: string, ref?: string): LoadedRun {
+export function loadRun(eventsDir: string, ref?: string, now = Date.now()): LoadedRun {
   const runs = listRunFiles(eventsDir);
   const info = !ref
     ? runs[0]
@@ -82,15 +91,32 @@ export function loadRun(eventsDir: string, ref?: string): LoadedRun {
     );
   }
   const events = parseEvents(readFileSync(info.path, "utf8"));
-  const last = events.at(-1);
   const started = events.find((e) => e.type === "experiment.started");
   const scenario = started?.payload["scenario"] as { rules?: { end?: { max_turns?: number } } } | undefined;
+  const lastTurn = Math.max(0, ...events.map((e) => e.turn));
+  const terminal = [...events].reverse().find((e) => e.type === "experiment.finished" || e.type === "experiment.failed" || e.type === "experiment.interrupted");
+  let status: RunStatus = "running";
+  let interruption: LoadedRun["interruption"];
+  if (terminal?.type === "experiment.finished") status = "finished";
+  else if (terminal?.type === "experiment.failed") status = "failed";
+  else if (terminal?.type === "experiment.interrupted") {
+    status = "interrupted";
+    interruption = { inferred: false, turn: terminal.turn, reason: String(terminal.payload["reason"] ?? "interrupted") };
+  } else if (now - Date.parse(info.modifiedAt) > STALE_MS) {
+    status = "interrupted";
+    interruption = {
+      inferred: true,
+      turn: lastTurn,
+      reason: `no terminal event and no new event for ${Math.round((now - Date.parse(info.modifiedAt)) / 60_000)} min`,
+    };
+  }
   return {
     ...info,
     events,
-    status: last?.type === "experiment.finished" ? "finished" : last?.type === "experiment.failed" ? "failed" : "running",
-    lastTurn: Math.max(0, ...events.map((e) => e.turn)),
+    status,
+    lastTurn,
     maxTurns: scenario?.rules?.end?.max_turns ?? null,
+    ...(interruption ? { interruption } : {}),
   };
 }
 
@@ -111,6 +137,7 @@ export function runHeader(run: LoadedRun) {
   return {
     run: run.ref,
     status: run.status,
+    ...(run.interruption ? { interruption: run.interruption } : {}),
     turn: run.lastTurn,
     max_turns: run.maxTurns,
     events: run.events.length,

@@ -7,12 +7,16 @@ services:
     image: llm-research-lab
     user: "${UID:-1000}:${GID:-1000}"
     working_dir: /app
+    # tini as PID 1, forwarding signals to the whole process group (npm → sh → tsx → node),
+    # so `docker stop` / Ctrl+C reach the run and it records experiment.interrupted.
+    init: true
     env_file:
       - path: .env
         required: false
     extra_hosts:
       - "host.docker.internal:host-gateway"   # model servers running on the host (LM Studio, vLLM...)
     environment:
+      TINI_KILL_PROCESS_GROUP: "1"
       OLLAMA_BASE_URL: http://ollama:11434
       LLAMACPP_BASE_URL: http://llamacpp:8080/v1
     volumes:

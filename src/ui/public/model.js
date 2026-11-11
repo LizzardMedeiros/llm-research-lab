@@ -34,6 +34,10 @@ export function addEvent(index, event) {
     index.status = "failed";
     index.finished = event.payload;
   }
+  if (event.type === "experiment.interrupted") {
+    index.status = "interrupted";
+    index.finished = event.payload;
+  }
   if (event.type === "agent.deactivated") index.deactivated.set(event.agent_id, { turn: event.turn, reason: event.payload.reason });
   if (!(event.turn > 0) || event.type.startsWith("experiment.")) return;
 

@@ -108,7 +108,9 @@ export function buildReport(manifest: Manifest, eventsDir: string, now = new Dat
     .filter((r) => r.ref && (r.status === "finished" || r.status === "failed"))
     .flatMap((r) => {
       try {
-        return [{ condition: r.condition, metrics: runMetrics(loadRun(eventsDir, r.ref)) }];
+        const run = loadRun(eventsDir, r.ref);
+        if (run.status === "interrupted" || run.status === "running") return []; // incomplete runs would skew the metrics
+        return [{ condition: r.condition, metrics: runMetrics(run) }];
       } catch {
         return [];
       }

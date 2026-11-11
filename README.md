@@ -576,6 +576,7 @@ Initial event types:
 experiment.started        # includes resolved scenario rules, agents, seed, run_id
 experiment.finished
 experiment.failed
+experiment.interrupted    # process stopped (SIGINT/SIGTERM) mid-run; payload: signal, last_turn
 
 agent.observation
 agent.model_request
@@ -615,6 +616,16 @@ carries a full snapshot of the world (agent positions and any mutable cell
 state). The state at any turn can be reconstructed from the log alone.
 
 The envelope must remain stable even if storage changes in the future.
+
+**Run status.** UI, Observer and batches report each run as `running`,
+`finished`, `failed` or `interrupted`. A stopped process (Ctrl+C,
+`docker stop`) records `experiment.interrupted`. The `lab` service runs
+with an init (`init: true`, process-group signals) so the signal reaches
+the run through npm and tsx. A process killed without a chance to write
+(`kill -9`, power loss) leaves no terminal event. Such a run is reported as
+`interrupted` with `inferred: true` once its log has not grown for 10
+minutes (`LAB_STALE_MINUTES`). This is a deduction; the log itself is never
+modified. Batch reports leave interrupted runs out of the metrics.
 
 ---
 

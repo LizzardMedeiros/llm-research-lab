@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -75,6 +75,20 @@ describe("UI server", () => {
     });
     expect(messages).toHaveLength(lines.length);
     expect(ended).toBe(true);
+  });
+
+  it("ends the stream of a dead run (no end event, no growth)", async () => {
+    const lines = readFileSync(join(eventsDir, "first-contact-mock/00001.jsonl"), "utf8").trim().split("\n");
+    mkdirSync(join(eventsDir, "dead"));
+    const path = join(eventsDir, "dead/00001.jsonl");
+    writeFileSync(path, lines.slice(0, 20).join("\n") + "\n");
+    const old = new Date(Date.now() - 60 * 60_000);
+    utimesSync(path, old, old);
+    const { messages, ended } = await readStream(`${base}/api/runs/dead/00001/stream`);
+    expect(messages).toHaveLength(20);
+    expect(ended).toBe(true);
+    const runs = await (await fetch(`${base}/api/runs`)).json();
+    expect(runs.find((r: { ref: string }) => r.ref === "dead/00001")).toMatchObject({ status: "interrupted", interruption: { inferred: true } });
   });
 
   it("rejects bad paths and writes", async () => {

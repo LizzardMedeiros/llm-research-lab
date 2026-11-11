@@ -30,6 +30,31 @@ export interface RunOptions {
   batch?: { name: string; condition: string; seed: number; replicate: number };
 }
 
+/** Runs in progress in this process, so a signal can close their logs cleanly. */
+const activeRuns = new Set<{ log: EventLog; engine: Engine; interrupted: boolean }>();
+let signalHandlersInstalled = false;
+
+/**
+ * Records `experiment.interrupted` on every run in progress and closes its
+ * log. Called on SIGINT/SIGTERM; `exit: false` is for tests.
+ */
+export function interruptActiveRuns(signal: string, { exit = true }: { exit?: boolean } = {}) {
+  for (const run of activeRuns) {
+    if (run.interrupted) continue;
+    run.interrupted = true;
+    run.engine.stop();
+    run.log.emit("experiment.interrupted", run.engine.currentTurn, { signal, reason: `process received ${signal}`, last_turn: run.engine.currentTurn });
+    run.log.close();
+  }
+  if (exit) process.exit(signal === "SIGINT" ? 130 : 143);
+}
+
+function installSignalHandlers() {
+  if (signalHandlersInstalled) return;
+  signalHandlersInstalled = true;
+  for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => interruptActiveRuns(signal));
+}
+
 export interface RunSummary extends RunResult {
   experimentId: string;
   runId: string;
@@ -174,14 +199,19 @@ export async function runExperiment(path: string, options: RunOptions = {}): Pro
     log,
   });
 
+  const active = { log, engine, interrupted: false };
+  activeRuns.add(active);
+  installSignalHandlers();
   try {
     const result = await engine.run();
+    if (active.interrupted) return { turns: engine.currentTurn, reason: "interrupted", experimentId: experiment.experimentId, runId, eventsPath };
     log.emit("experiment.finished", result.turns, { reason: result.reason, turns: result.turns, snapshot: prepared.world.snapshot(result.turns) });
     return { ...result, experimentId: experiment.experimentId, runId, eventsPath };
   } catch (error) {
-    log.emit("experiment.failed", 0, { error: error instanceof Error ? error.stack ?? error.message : String(error) });
+    if (!active.interrupted) log.emit("experiment.failed", 0, { error: error instanceof Error ? error.stack ?? error.message : String(error) });
     throw error;
   } finally {
+    activeRuns.delete(active);
     log.close();
   }
 }

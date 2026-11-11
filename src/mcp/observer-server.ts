@@ -50,7 +50,7 @@ server.registerTool(
       .slice(0, limit)
       .map((info) => {
         const run = loadRun(eventsDir, info.ref);
-        return { run: run.ref, status: run.status, turn: run.lastTurn, max_turns: run.maxTurns, modified_at: run.modifiedAt };
+        return { run: run.ref, status: run.status, ...(run.interruption ? { interruption: run.interruption } : {}), turn: run.lastTurn, max_turns: run.maxTurns, modified_at: run.modifiedAt };
       }),
   ),
 );

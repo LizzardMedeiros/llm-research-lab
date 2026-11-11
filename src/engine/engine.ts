@@ -28,7 +28,7 @@ export interface EngineOptions {
 
 export interface RunResult {
   turns: number;
-  reason: "max_turns" | "scenario_finished";
+  reason: "max_turns" | "scenario_finished" | "interrupted";
 }
 
 interface Pending {
@@ -54,15 +54,27 @@ export class Engine {
     for (const agent of options.agents) this.history.set(agent.id, []);
   }
 
+  /** Turn being played (0 before the first turn). */
+  currentTurn = 0;
+  private stopRequested = false;
+
+  /** Ends the run at the next safe point (between batches). */
+  stop() {
+    this.stopRequested = true;
+  }
+
   async run(): Promise<RunResult> {
     const { scenario, rules, world, rng } = this.options;
     const maxTurns = scenario.config.rules.end.max_turns;
     for (let turn = 1; turn <= maxTurns; turn++) {
+      if (this.stopRequested) return { turns: this.currentTurn, reason: "interrupted" };
+      this.currentTurn = turn;
       const batches =
         scenario.config.scheduling === "sequential"
           ? rng.shuffle(this.options.agents).map((agent) => [agent])
           : [this.options.agents];
       for (const batch of batches) {
+        if (this.stopRequested) return { turns: turn, reason: "interrupted" };
         const active = batch.filter((agent) => world.isActive(agent.id));
         if (active.length > 0) await this.runBatch(turn, active);
       }

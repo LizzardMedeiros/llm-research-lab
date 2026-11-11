@@ -8,7 +8,7 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { listRunFiles, loadRun } from "../mcp/run-reader.js";
+import { listRunFiles, loadRun, STALE_MS } from "../mcp/run-reader.js";
 
 const PUBLIC_DIR = join(dirname(fileURLToPath(import.meta.url)), "public");
 const TYPES: Record<string, string> = {
@@ -17,12 +17,14 @@ const TYPES: Record<string, string> = {
   ".css": "text/css; charset=utf-8",
 };
 const SEGMENT = /^[A-Za-z0-9_.-]+$/;
-const TERMINAL = ['"type":"experiment.finished"', '"type":"experiment.failed"'];
+const TERMINAL = ['"type":"experiment.finished"', '"type":"experiment.failed"', '"type":"experiment.interrupted"'];
 
 export interface UiServerOptions {
   eventsDir: string;
   /** Tail polling interval for live runs. */
   pollMs?: number;
+  /** A run with no terminal event and no growth for this long is treated as interrupted. */
+  staleMs?: number;
 }
 
 function sendJson(res: ServerResponse, status: number, body: unknown) {
@@ -40,7 +42,7 @@ function serveStatic(res: ServerResponse, path: string) {
 }
 
 /** Streams every line of a run log, then keeps tailing until a terminal event. */
-function streamRun(req: IncomingMessage, res: ServerResponse, path: string, pollMs: number) {
+function streamRun(req: IncomingMessage, res: ServerResponse, path: string, pollMs: number, staleMs: number) {
   res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store", connection: "keep-alive" });
   let offset = 0;
   let partial = "";
@@ -70,8 +72,15 @@ function streamRun(req: IncomingMessage, res: ServerResponse, path: string, poll
     } catch {
       // file briefly unavailable; retry next tick
     }
-    if (done) {
-      res.write("event: end\ndata: {}\n\n");
+    // A dead run (no terminal event, no growth for a long time) would never end the stream.
+    let stale = false;
+    try {
+      stale = !done && Date.now() - statSync(path).mtimeMs > staleMs;
+    } catch {
+      // ignore
+    }
+    if (done || stale) {
+      res.write(`event: end\ndata: ${JSON.stringify({ stale })}\n\n`);
       stop();
       res.end();
     }
@@ -82,7 +91,7 @@ function streamRun(req: IncomingMessage, res: ServerResponse, path: string, poll
   tick();
 }
 
-export function createUiServer({ eventsDir, pollMs = 500 }: UiServerOptions): Server {
+export function createUiServer({ eventsDir, pollMs = 500, staleMs = STALE_MS }: UiServerOptions): Server {
   return createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const parts = url.pathname.split("/").filter(Boolean);
@@ -92,7 +101,7 @@ export function createUiServer({ eventsDir, pollMs = 500 }: UiServerOptions): Se
       if (url.pathname === "/api/runs") {
         const runs = listRunFiles(eventsDir).map((info) => {
           const run = loadRun(eventsDir, info.ref);
-          return { ref: run.ref, experiment_id: run.experimentId, run_id: run.runId, status: run.status, turn: run.lastTurn, max_turns: run.maxTurns, modified_at: run.modifiedAt };
+          return { ref: run.ref, experiment_id: run.experimentId, run_id: run.runId, status: run.status, interruption: run.interruption, turn: run.lastTurn, max_turns: run.maxTurns, modified_at: run.modifiedAt };
         });
         return sendJson(res, 200, runs);
       }
@@ -103,7 +112,7 @@ export function createUiServer({ eventsDir, pollMs = 500 }: UiServerOptions): Se
         if (!SEGMENT.test(experimentId) || !/^\d+$/.test(runId)) return sendJson(res, 400, { error: "invalid run" });
         const path = join(eventsDir, experimentId, `${runId}.jsonl`);
         if (!existsSync(path)) return sendJson(res, 404, { error: `run ${experimentId}/${runId} not found` });
-        return streamRun(req, res, path, pollMs);
+        return streamRun(req, res, path, pollMs, staleMs);
       }
 
       if (parts[0] === "api") return sendJson(res, 404, { error: "not found" });

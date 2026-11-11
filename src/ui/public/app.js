@@ -154,8 +154,13 @@ function scheduleRender() {
 function render() {
   const { index } = state;
   const started = index.started;
-  $("run-status").className = `badge ${index.status}`;
-  $("run-status").textContent = started ? index.status : "loading";
+  // A run that died without a terminal event is reported as interrupted by the server (inferred).
+  const listed = state.runs.find((r) => r.ref === state.ref);
+  const status = index.status === "running" && listed?.status === "interrupted" ? "interrupted" : index.status;
+  const inferred = status === "interrupted" && listed?.interruption?.inferred;
+  $("run-status").className = `badge ${status}`;
+  $("run-status").textContent = started ? `${status}${inferred ? " (no end event)" : ""}` : "loading";
+  $("run-status").title = listed?.interruption?.reason ?? "";
   $("run-meta").textContent = started
     ? `${started.scenario.scenario} · seed ${started.seed} · ${started.scenario.scheduling} · ${index.count} events`
     : "";

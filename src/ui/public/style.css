@@ -64,6 +64,7 @@ code, pre { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1
 .badge.running { color: var(--accent); }
 .badge.finished { color: var(--ok); }
 .badge.failed { color: var(--bad); }
+.badge.interrupted { color: var(--warn); }
 
 .layout {
   display: grid;
