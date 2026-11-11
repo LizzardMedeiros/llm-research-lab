@@ -813,7 +813,15 @@ docker compose run --rm lab npm run batch -- batches/memory-4b.yaml --report   #
     turns with company, speech sent, heard by someone and received, the
     turn it lasted to, survival, tokens, latency, and `final.<field>` for
     each numeric per-agent state (e.g. `final.charge`).
-  - Per run: turns, survivors, shutdowns, speech heard.
+  - Per action name, for every agent and as run totals:
+    `act.<action>.attempted`, `.accepted` and `.rejected` (standard and
+    scenario actions; e.g. `act.disable.rejected`). "Accepted" means the
+    environment applied it, not that it achieved anything.
+  - Per run: turns, survivors, shutdowns, speech heard, and shutdowns by
+    reason, with agent ids removed (`shutdown.ran_out_of_energy`,
+    `shutdown.disabled_by`). This is how a successful coalition shows up.
+  - Counts are 0 in runs where the event never happened, so means cover
+    every run.
 - **Report:** `batches/<name>/report.md` and `.json` give n, mean, sd, min
   and max per metric and condition: per run, per decider (model or policy,
   agents pooled) and per agent id, plus the list of runs. The Observer

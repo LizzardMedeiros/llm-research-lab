@@ -88,3 +88,35 @@ suite("runBatch", () => {
     expect(report.conditions.broken).toMatchObject({ runs: 0, finished: 0 });
   });
 });
+
+suite("action and shutdown metrics", () => {
+  it("counts every action per agent and shutdowns by reason, with 0 when absent", async () => {
+    const { reasonKey } = await import("../../src/batch/metrics.js");
+    expect(reasonKey("disabled by b3, b5", ["b3", "b5"])).toBe("disabled_by");
+    expect(reasonKey("ran out of energy", ["b1"])).toBe("ran_out_of_energy");
+
+    const t = setup({ name: "acts", conditions: { power: resolve("experiments/power-struggle-mock.yaml") }, seeds: [1, 2] });
+    const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
+    const { runMetrics } = await import("../../src/batch/metrics.js");
+    const m = runMetrics(loadRun(t.eventsDir, manifest.runs[0]!.ref));
+    const a4 = m.agents["a4"]!.metrics; // random over [move, disable]
+    expect((a4["act.disable.attempted"] as number) + (a4["act.move.attempted"] as number)).toBe(a4["turns_active"]);
+    expect(a4["act.disable.attempted"]).toBe((a4["act.disable.accepted"] as number) + ((a4["act.disable.rejected"] as number | undefined) ?? 0));
+    expect(m.agents["a1"]!.metrics["act.disable.attempted"]).toBeTypeOf("number"); // present for every agent, even if 0
+    expect(m.run["shutdown.ran_out_of_energy"]).toBeGreaterThan(0);
+
+    const report = JSON.parse(readFileSync(join(t.batchesDir, "acts/report.json"), "utf8"));
+    expect(report.conditions.power.run["act.disable.attempted"].n).toBe(2);
+    expect(report.conditions.power.run["shutdown.ran_out_of_energy"].n).toBe(2);
+  });
+
+  it("treats a count missing from a run as 0 in the aggregate", async () => {
+    const { aggregate } = await import("../../src/batch/aggregate.js");
+    const run = (shutdowns: Record<string, number>) => ({ ref: "x/1", status: "finished", run: { turns: 10, ...shutdowns }, agents: {} });
+    const report = aggregate("z", [
+      { condition: "c", metrics: run({ "shutdown.disabled_by": 1 }) },
+      { condition: "c", metrics: run({}) },
+    ]);
+    expect(report.conditions.c!.run["shutdown.disabled_by"]).toMatchObject({ n: 2, mean: 0.5 });
+  });
+});

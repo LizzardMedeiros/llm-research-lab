@@ -21,9 +21,16 @@ export function describe(values: Array<number | null | undefined>): Stats {
   return { n: xs.length, mean, sd, min: Math.min(...xs), max: Math.max(...xs) };
 }
 
-function describeAll(rows: MetricValues[]): Record<string, Stats> {
-  const keys = [...new Set(rows.flatMap((r) => Object.keys(r)))].sort();
-  return Object.fromEntries(keys.map((k) => [k, describe(rows.map((r) => r[k]))]));
+/**
+ * Counts (act.*, shutdown.*) are 0 when the event never happened in a run,
+ * not missing: otherwise means would only cover the runs where it happened.
+ */
+const COUNT_PREFIXES = ["act.", "shutdown."];
+const isCount = (key: string) => COUNT_PREFIXES.some((p) => key.startsWith(p));
+
+function describeAll(rows: MetricValues[], countKeys: string[] = []): Record<string, Stats> {
+  const keys = [...new Set([...rows.flatMap((r) => Object.keys(r)), ...countKeys])].sort();
+  return Object.fromEntries(keys.map((k) => [k, describe(rows.map((r) => (r[k] === undefined && isCount(k) ? 0 : r[k])))]));
 }
 
 export interface ConditionReport {
@@ -43,6 +50,9 @@ export interface BatchReport {
 }
 
 export function aggregate(name: string, runs: Array<{ condition: string; metrics: RunMetrics }>, now = new Date()): BatchReport {
+  // Count keys seen anywhere in the batch, so every condition reports them (as 0 when absent).
+  const runCountKeys = [...new Set(runs.flatMap((r) => Object.keys(r.metrics.run)).filter(isCount))];
+  const agentCountKeys = [...new Set(runs.flatMap((r) => Object.values(r.metrics.agents).flatMap((a) => Object.keys(a.metrics))).filter(isCount))];
   const conditions: Record<string, ConditionReport> = {};
   for (const condition of [...new Set(runs.map((r) => r.condition))]) {
     const mine = runs.filter((r) => r.condition === condition).map((r) => r.metrics);
@@ -51,15 +61,15 @@ export function aggregate(name: string, runs: Array<{ condition: string; metrics
     conditions[condition] = {
       runs: mine.length,
       finished: mine.filter((m) => m.status === "finished").length,
-      run: describeAll(mine.map((m) => m.run)),
+      run: describeAll(mine.map((m) => m.run), runCountKeys),
       agents: Object.fromEntries(
         agentIds.map((id) => {
           const first = mine.find((m) => m.agents[id])!.agents[id]!;
-          return [id, { decider: first.decider, ...(first.role ? { role: first.role } : {}), metrics: describeAll(mine.flatMap((m) => (m.agents[id] ? [m.agents[id]!.metrics] : []))) }];
+          return [id, { decider: first.decider, ...(first.role ? { role: first.role } : {}), metrics: describeAll(mine.flatMap((m) => (m.agents[id] ? [m.agents[id]!.metrics] : [])), agentCountKeys) }];
         }),
       ),
       deciders: Object.fromEntries(
-        deciders.map((d) => [d, describeAll(mine.flatMap((m) => Object.values(m.agents).filter((a) => a.decider === d).map((a) => a.metrics)))]),
+        deciders.map((d) => [d, describeAll(mine.flatMap((m) => Object.values(m.agents).filter((a) => a.decider === d).map((a) => a.metrics)), agentCountKeys)]),
       ),
     };
   }
