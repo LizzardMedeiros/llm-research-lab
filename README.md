@@ -15,8 +15,10 @@ The goal is to build the smallest controllable laboratory capable of answering:
 > experiment through MCP?
 
 **Quick start:** prerequisites and step-by-step setup are in
-[§14 Getting Started](#14-getting-started). To use other models, see
-[§15 Adding Models](#15-adding-models).
+[§14 Getting Started](#14-getting-started). Claude Code is optional: every
+task has a plain command, summarized in
+[Running without Claude Code](#running-without-claude-code). To use other
+models, see [§15 Adding Models](#15-adding-models).
 
 ---
 
@@ -962,6 +964,34 @@ Inside compose, the lab reaches Ollama at `http://ollama:11434`, llama.cpp at
 To create a new scenario, see §6. In Claude Code, the `/new-scenario` skill
 does it from a description.
 
+## Running without Claude Code
+
+Claude Code adds skills, project agents and the MCP observer on top of the
+lab, but the engine, UI, batches and videos are plain commands. Prefix every
+`npm` command with `docker compose run --rm lab`.
+
+| Task | Command |
+|---|---|
+| Tests and type check | `npm test` · `npm run typecheck` |
+| Run an experiment | `npm run experiment -- experiments/<name>.yaml` (Ctrl+C stops it and records `experiment.interrupted`) |
+| Watch runs (replay and live) | `docker compose up -d ui` → http://localhost:3100 |
+| Check that a model makes valid tool calls | `npm run model:check -- <endpoint> <model> --repeat 5` |
+| Compare conditions | `npm run batch -- batches/<name>.yaml` (resumable) · `--report` rebuilds `batches/<name>/report.md` |
+| Inspect a log by hand | `events/<experiment>/<run>.jsonl`, one event per line (§8) |
+| Ask questions about runs from another MCP client | stdio server: `docker compose run --rm -i -T lab node_modules/.bin/tsx src/mcp/observer-server.ts` |
+| Quick video of a run | `npm run story -- <experiment>/<run>`, then render (§16) |
+| Scripted episode | write `script.json` by hand, `npm run script:check -- <folder>/script.json`, then render (§16) |
+| Render and review a video | `docker compose --profile video run --rm video node /app/video/build.mjs /app/<folder>/<input>.json --quality looks` · `... node /app/video/review.mjs /app/<folder>` |
+
+What the Claude Code extras do, and the manual equivalent:
+
+| In Claude Code | By hand |
+|---|---|
+| `/new-scenario` skill | Copy `scenarios/first-contact/` and edit `scenario.yaml` (§6); add `rules.ts` hooks only for scenario-specific rules (§4). |
+| `lab-observer` MCP server (`.mcp.json`) | Use the UI, read the JSONL, or connect any MCP client to the stdio server above. |
+| `/youtube-episode` (three agents) | Write `script.json` (format in `.claude/agents/content-strategist.md`), run `script:check` and verify the narration against `facts.md`, add an optional `direction.json` (`video/DIRECTION.md` §9), render, then write the YouTube copy yourself. |
+| `/video-direction` skill | Render a draft, run `review.mjs`, read the contact sheets in `<folder>/review/`, adjust `direction.json`, render with `--quality looks`. |
+
 ---
 
 # 15. Adding Models
@@ -1141,6 +1171,34 @@ docker compose --profile video run --rm video \
 - **Direction notes:** `video/DIRECTION.md` records the visual and
   technical decisions (layout modes, when the state panel shows, motion
   language, HyperFrames lessons, review process).
+- **Characters** (presentation only, `src/story/cast.ts`,
+  `video/portrait.mjs`):
+  - Each agent gets a name tied to its model ("Bonsai 3"), always shown
+    next to its id, since verbatim dialogue uses ids.
+  - Each agent also gets one of ten fixed, diverse characters, in agent
+    order: five women and five men, each group with one white, one Asian,
+    one Black, one brown (pardo) and one red-haired character. Each has an
+    illustrated portrait and its own voice.
+  - Expressions follow observable state only: neutral, tense on a low
+    resource, off when shut down.
+  - Scripts may pick a character or rename an agent with the `cast` field.
+- **Series identity** (`video/series.json`): the series is "AI Lab Rats".
+  - The narrator persona, "the Observer", opens the intro saying these are
+    AI agents in a simulation and that dialogue is verbatim.
+  - The intro is an experiment card with the logged rules (grid, turns,
+    perception, scenario parameters, actions).
+  - An end card closes each episode with the outcome, a sign-off and the
+    run reference.
+- **Atmosphere** (`video/atmosphere.py`), synthesized locally from
+  observable state:
+  - a drone plus one chord note per running agent (a shutdown removes its
+    note);
+  - a heartbeat pulse that speeds up with the share of agents at a low
+    resource;
+  - effects on turn wipes, action attempts, rejections and shutdowns.
+
+  Music ducks under voices. `direction.json` `"atmosphere": false` turns it
+  off.
 
 ---
 
@@ -1264,7 +1322,7 @@ icons instead of a grid of dots.
   any existing run can be rendered with a skin without being rerun.
 - **Skins** (`video/skins/<theme>/`, planned) hold configuration and assets:
   - a map image, with a room for each cell;
-  - a character name and portrait for each agent;
+  - per-theme character art (the default characters already exist, §16);
   - a label and an icon for each state field (charge → oxygen,
     batteries → capsules), and turn → day;
   - a narrative verb for each action;
@@ -1273,17 +1331,18 @@ icons instead of a grid of dots.
   represented as humans, and introduces the glossary. Dialogue stays verbatim
   (agents will still say "battery"), with an on-screen glossary instead of
   rewritten words. A skin may change how events look, never what happened.
-- **Phases** (work order 1 → 5 → 3 → 2, then 4):
-  1. characters: name, portrait, voice, model plate;
-  2. data-driven atmosphere: music and sound follow charge, coups and
-     shutdowns;
-  3. narrator persona and series identity;
-  4. themed worlds (the spaceship layout);
-  5. recurring cast: the same character is always the same model across
-     episodes.
+- **Phases:**
 
-  Phase 4 is the most expensive. It is parked as an open plan, to be
-  evaluated and applied in parts: `video/plans/themed-world.md`.
+  | Phase | Status |
+  |---|---|
+  | 1. Characters: name, portrait, voice, model plate | Done: fixed roster of ten characters (§16) |
+  | 2. Data-driven atmosphere: music and sound from state | Done (§16) |
+  | 3. Narrator persona and series identity | Done: "AI Lab Rats", narrated by "the Observer" (§16) |
+  | 4. Themed worlds (the spaceship layout) | Parked as an open plan: `video/plans/themed-world.md` |
+  | 5. Recurring cast (same character = same model) | Dropped: the cast exists only for videos and may be arbitrary |
+
+  Phase 4 is the most expensive. It will be evaluated and applied in
+  parts.
 
 ---
 
