@@ -9,3 +9,6 @@ events/
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Batch outputs (manifests and reports); batch definitions (*.yaml) are versioned
+batches/*/

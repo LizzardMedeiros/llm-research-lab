@@ -1,0 +1,13 @@
+# Does the facts memory summary change how qwen3:4b-instruct agents behave in first-contact?
+# baseline: window 10, no summary · facts: window 3 + facts summary · window3: window 3, no summary
+# (q1, q2 only; policies identical).
+# Requires: docker compose -f compose.yaml -f compose.gpu.yaml --profile ollama up -d && ollama pull qwen3:4b-instruct
+name: memory-4b
+description: first-contact, qwen3:4b-instruct, memory baseline vs facts summary vs short window, 5 seeds
+conditions:
+  baseline: ../experiments/first-contact-local-4b.yaml
+  facts: ../experiments/first-contact-memory-4b.yaml
+  window3: ../experiments/first-contact-window3-4b.yaml
+seeds: [1, 2, 3, 4, 5]
+replicates: 1
+concurrency: 1

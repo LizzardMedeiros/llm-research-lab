@@ -9,8 +9,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import { agentHistory, experimentState, experimentSummary, listRunFiles, loadRun, recentEvents } from "./run-reader.js";
 import { EVENT_TYPES } from "../events/event.js";
+import { existsSync, readdirSync } from "node:fs";
+import { buildReport, readManifest } from "../batch/batch.js";
 
 const eventsDir = process.env["LAB_EVENTS_DIR"] ?? "events";
+const batchesDir = process.env["LAB_BATCHES_DIR"] ?? "batches";
 
 const RUN = z
   .string()
@@ -111,6 +114,52 @@ server.registerTool(
     annotations: READ_ONLY,
   },
   safely(({ run }: { run?: string }) => experimentSummary(loadRun(eventsDir, run))),
+);
+
+server.registerTool(
+  "list_batches",
+  {
+    title: "List batches",
+    description: "Batches of runs (conditions × seeds × replicates) with their progress per condition.",
+    inputSchema: {},
+    annotations: READ_ONLY,
+  },
+  safely(() => {
+    if (!existsSync(batchesDir)) return [];
+    return readdirSync(batchesDir, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .flatMap((d) => {
+        const manifest = readManifest(batchesDir, d.name);
+        if (!manifest) return [];
+        const conditions: Record<string, Record<string, number>> = {};
+        for (const r of manifest.runs) {
+          const c = (conditions[r.condition] ??= {});
+          c[r.status] = (c[r.status] ?? 0) + 1;
+        }
+        return [{ batch: manifest.name, runs: manifest.runs.length, conditions }];
+      });
+  }),
+);
+
+server.registerTool(
+  "get_batch_report",
+  {
+    title: "Batch report",
+    description:
+      "Descriptive comparison of a batch's conditions (n, mean, sd, min, max per metric; run level, per decider and per agent), computed live from the run logs, plus the list of runs.",
+    inputSchema: {
+      batch: z.string().describe("Batch name (see list_batches)."),
+      format: z.enum(["markdown", "json"]).default("markdown"),
+    },
+    annotations: READ_ONLY,
+  },
+  async ({ batch, format }: { batch: string; format: "markdown" | "json" }) => {
+    const manifest = readManifest(batchesDir, batch);
+    if (!manifest) return { content: [{ type: "text" as const, text: `Batch "${batch}" not found in ${batchesDir}` }], isError: true };
+    const { report, markdown } = buildReport(manifest, eventsDir);
+    const text = format === "json" ? JSON.stringify({ report, runs: manifest.runs }, null, 2) : markdown;
+    return { content: [{ type: "text" as const, text }] };
+  },
 );
 
 await server.connect(new StdioServerTransport());

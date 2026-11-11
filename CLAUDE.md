@@ -22,6 +22,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `npm run experiment -- <experiment.yaml>` — run an experiment
   - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
     produces valid tool calls (calls the real model)
+  - `npm run batch -- <batch.yaml> [--report]` — conditions × seeds × replicates, resumable; report in `batches/<name>/`
   - `npm run story -- <exp>/<run> [--narrator <endpoint>/<model>]` — story.json for a video
   - `docker compose --profile video run --rm video node /app/video/build.mjs <story.json>` — render it
   - `npm run script:check -- <script.json>` — validate a written episode script, resolve quotes, write facts.md
@@ -130,6 +131,14 @@ spec; read it before architectural changes and keep it in sync with decisions.
   modes, panel visibility, motion language, HyperFrames lessons, review
   process). Follow it, and record every new adjustment there: it will become
   a skill.
+
+### Batches
+- `src/batch/`: a batch only orchestrates normal runs (seed override +
+  `batch` field in `experiment.started`) and derives everything else from the
+  logs. Metrics stay generic (no scenario-specific code); scenario state
+  enters only as `final.<field>` from per-agent numeric state.
+- Reports are descriptive (n, mean, sd, min, max). Do not add significance
+  tests or claims of effects without explicit user approval (README §18).
 
 ### Reasoning
 - Never claim to capture chain-of-thought. Model explanations are stored as

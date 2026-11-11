@@ -118,9 +118,11 @@ describe("MCP server (stdio)", () => {
       const { tools } = await client.listTools();
       expect(tools.map((t) => t.name).sort()).toEqual([
         "get_agent_history",
+        "get_batch_report",
         "get_experiment_state",
         "get_experiment_summary",
         "get_recent_events",
+        "list_batches",
         "list_runs",
       ]);
       expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);

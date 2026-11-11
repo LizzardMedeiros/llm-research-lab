@@ -24,6 +24,10 @@ export interface RunOptions {
   providerFactory?: (endpoint: string) => ModelProvider;
   clock?: () => Date;
   onLog?: (log: EventLog) => void;
+  /** Replaces the experiment's seed (batch runs). */
+  seed?: number;
+  /** Batch membership, recorded in experiment.started. */
+  batch?: { name: string; condition: string; seed: number; replicate: number };
 }
 
 export interface RunSummary extends RunResult {
@@ -130,7 +134,8 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
 }
 
 export async function runExperiment(path: string, options: RunOptions = {}): Promise<RunSummary> {
-  const experiment = await loadExperiment(path);
+  const loaded = await loadExperiment(path);
+  const experiment = options.seed === undefined ? loaded : { ...loaded, config: { ...loaded.config, seed: options.seed } };
   const prepared = await prepareRun(experiment, options);
 
   let runId = "00000";
@@ -149,6 +154,7 @@ export async function runExperiment(path: string, options: RunOptions = {}): Pro
     experiment_id: experiment.experimentId,
     run_id: runId,
     seed: experiment.config.seed,
+    ...(options.batch ? { batch: options.batch } : {}),
     experiment_file: experiment.path,
     scenario: { file: prepared.scenario.path, hooks: prepared.scenario.hooksPath ?? null, ...prepared.scenario.config },
     actions: prepared.actions.map((a) => a.tool),

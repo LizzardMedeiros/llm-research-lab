@@ -751,6 +751,49 @@ timestamp
 The same configuration produces the same environment behavior. LLM
 stochasticity is intentionally not eliminated.
 
+## Batches: repeated runs and condition comparison
+
+A single run is an anecdote. A **batch** runs conditions × seeds ×
+replicates and summarizes them:
+
+```yaml
+# batches/memory-4b.yaml
+name: memory-4b
+conditions:                      # condition → experiment file (relative to this file)
+  baseline: ../experiments/first-contact-local-4b.yaml
+  facts:    ../experiments/first-contact-memory-4b.yaml
+seeds: [1, 2, 3, 4, 5]           # replaces the experiment's seed (spawns, environment randomness)
+replicates: 1                    # >1: same seed again; measures LLM variance alone
+concurrency: 1                   # >1 only for policies or cloud APIs (local GPU serves one request at a time)
+```
+
+```bash
+docker compose run --rm lab npm run batch -- batches/memory-4b.yaml            # run or resume
+docker compose run --rm lab npm run batch -- batches/memory-4b.yaml --report   # rebuild the report only
+```
+
+- **Runs:** each run is a normal run (`events/<experiment>/<run>.jsonl`, in
+  the UI and the Observer). `experiment.started` records
+  `batch: {name, condition, seed, replicate}`.
+- **Resume:** `batches/<name>/manifest.json` tracks every run. Rerunning the
+  batch keeps finished runs and retries interrupted or failed ones.
+- **Metrics:** per run, derived only from the log and generic for any
+  scenario.
+  - Per agent: accepted rate, rejections, tool-call rate, cells visited,
+    turns with company, speech sent, heard by someone and received, the
+    turn it lasted to, survival, tokens, latency, and `final.<field>` for
+    each numeric per-agent state (e.g. `final.charge`).
+  - Per run: turns, survivors, shutdowns, speech heard.
+- **Report:** `batches/<name>/report.md` and `.json` give n, mean, sd, min
+  and max per metric and condition: per run, per decider (model or policy,
+  agents pooled) and per agent id, plus the list of runs. The Observer
+  exposes `list_batches` and `get_batch_report`.
+- **Descriptive only:** no significance tests or confidence intervals.
+  Automatic statistical analysis remains out of scope (§18). Read
+  differences against the sd and n.
+- Batch definitions (`batches/*.yaml`) are versioned; outputs
+  (`batches/*/`) are gitignored.
+
 ---
 
 # 13. Initial Project Structure
@@ -769,6 +812,7 @@ src/
 ├── policies/        # built-in policies: random, repeat, scripted
 ├── events/          # event schema, JSONL store
 ├── config/          # YAML loading and validation
+├── batch/           # batches: runner, manifest, metrics, descriptive report
 ├── mcp/             # read-only MCP server over JSONL
 └── ui/              # SSE server + replay view (public/: vanilla JS)
 

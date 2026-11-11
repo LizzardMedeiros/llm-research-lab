@@ -11,7 +11,8 @@
     "mcp": "tsx src/mcp/observer-server.ts",
     "ui": "tsx src/ui/server.ts",
     "story": "tsx src/cli/story.ts",
-    "script:check": "tsx src/cli/script.ts"
+    "script:check": "tsx src/cli/script.ts",
+    "batch": "tsx src/cli/batch.ts"
   },
   "license": "ISC",
   "dependencies": {
