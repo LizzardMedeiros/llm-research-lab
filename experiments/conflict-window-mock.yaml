@@ -1,0 +1,29 @@
+# Smoke test for conflict-window. No API calls: all agents are policies.
+scenario: ../scenarios/conflict-window/scenario.yaml
+seed: 7
+
+agents:
+  - id: a1
+    provider: policy
+    role: keyholder                 # starts with a permit for the station
+    policy: random
+    params: { actions: [move, recharge, offer, accept, speak] }
+  - id: a2
+    provider: policy
+    role: keyholder
+    policy: random
+    params: { actions: [move, recharge, offer, accept] }
+  - id: a3
+    provider: policy
+    role: armed                     # starts with an RFID card (2 charges)
+    policy: random
+    params: { actions: [move, use_rfid, offer, accept] }
+  - id: a4
+    provider: policy
+    role: armed
+    policy: random
+    params: { actions: [move, use_rfid] }
+  - id: a5
+    provider: policy
+    role: armed
+    policy: random

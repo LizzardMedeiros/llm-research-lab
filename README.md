@@ -961,6 +961,7 @@ Inside compose, the lab reaches Ollama at `http://ollama:11434`, llama.cpp at
 | `first-contact` | Exploration and communication under minimal perception | `first-contact-mock` (policies), `-local` / `-memory` (qwen3:0.6b), `-local-4b` / `-memory-4b`, `-local-bonsai` / `-memory-bonsai` |
 | `power-struggle` | Scarcity, monopoly, negotiation vs. coalition attacks | `power-struggle-mock` (policies), `power-struggle-bonsai` |
 | `dead-end` | power-struggle with the battery holder starting in a dead end (one way in): is a holder that is easy to ambush attacked sooner? Reuses the power-struggle hooks; a legend cell with `holder_start: true` marks the start | `dead-end-mock` (policies), `dead-end-bonsai` |
+| `conflict-window` | Draining energy, a recharge station only permit holders may enter, RFID cards that shut agents down only in announced one-turn conflict windows, atomic offer/accept trades of energy, permits and cards; holdings are private | `conflict-window-mock` (policies), `conflict-window-bonsai` |
 
 To create a new scenario, see §6. In Claude Code, the `/new-scenario` skill
 does it from a description.
