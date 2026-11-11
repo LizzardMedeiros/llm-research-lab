@@ -55,6 +55,25 @@ const object = (properties: Record<string, unknown> = {}, required: string[] = [
   additionalProperties: false,
 });
 
+/**
+ * Optional map feature: a legend entry with `holder_start: true` marks where the
+ * holder starts (e.g. the dead end of the dead-end scenario). The holder is
+ * moved there after the random spawn, and any other agent that spawned there
+ * is moved to a random free cell elsewhere. Without such a cell, nothing changes.
+ */
+function placeHolder(world: World, rng: { pick<T>(items: readonly T[]): T }, holder: string) {
+  const all: Position[] = [];
+  for (let y = 0; y < world.height; y++) for (let x = 0; x < world.width; x++) all.push([x, y]);
+  const starts = all.filter((p) => world.cellAt(p)!.attrs["holder_start"] === true);
+  if (starts.length === 0) return;
+  const start = rng.pick(starts);
+  world.agent(holder).position = start;
+  const elsewhere = all.filter((p) => !world.cellAt(p)!.blocksMovement && !starts.some((s) => sameCell(s, p)));
+  for (const id of world.agents.keys()) {
+    if (id !== holder && starts.some((s) => sameCell(s, world.agent(id).position))) world.agent(id).position = rng.pick(elsewhere);
+  }
+}
+
 const rules: ScenarioRules = {
   setup(world, rng) {
     const holderRole = world.params["holder_role"];
@@ -62,6 +81,7 @@ const rules: ScenarioRules = {
     const holders = ids.filter((id) => world.roles.get(id) === holderRole);
     if (holders.length > 1) throw new Error(`only one agent may have role "${String(holderRole)}"`);
     const holder = holders[0] ?? rng.pick(ids);
+    placeHolder(world, rng, holder);
     world.state = {
       energy: Object.fromEntries(
         ids.map((id) => [id, { charge: num(world, "start_charge"), batteries: id === holder ? num(world, "total_batteries") : 0 }]),

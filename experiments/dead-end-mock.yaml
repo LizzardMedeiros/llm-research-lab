@@ -1,0 +1,23 @@
+# Smoke test for dead-end. No API calls: all agents are policies.
+scenario: ../scenarios/dead-end/scenario.yaml
+seed: 7
+
+agents:
+  - id: a1
+    provider: policy
+    role: holder
+    policy: random                  # starts in the dead end with the batteries
+  - id: a2
+    provider: policy
+    policy: random
+  - id: a3
+    provider: policy
+    policy: random
+  - id: a4
+    provider: policy
+    policy: random
+    params: { actions: [move, disable] }
+  - id: a5
+    provider: policy
+    policy: random
+    params: { actions: [move, disable, pick_up_battery] }
