@@ -154,6 +154,27 @@ the seed of a future skill: keep it current whenever the video changes.
 - 0.35 s gap between lines, 0.9 s hold at the end of a scene, 0.9 s wipe
   before the narration.
 
+## 5b. Atmosphere (humanization phase 2)
+
+- One synthesized track (`video/atmosphere.py`, numpy; no third-party
+  audio), built from cues that `build.mjs` derives from OBSERVABLE state
+  only. Same cues → same file (cached by cue and script hash).
+- **The chord is the cast:** a quiet base drone, plus one note per
+  running agent (A minor pentatonic, in agent order). An agent's note
+  fades out when it shuts down on screen and comes back in flashbacks
+  where it is still running. When nobody is left, only the drone remains.
+- **Tension pulse:** a low heartbeat whose rate (54 to 120 bpm) and weight
+  follow the share of running agents whose expression is `tense` (the
+  same rule as the portraits, §2b). No pulse when nobody is low.
+- **Effects:** whoosh on the turn wipe, a blip per action attempt (a dull
+  buzz when rejected), a power-down on each SHUT DOWN stamp, a chime on
+  the end-card logo.
+- Music ducks 60% under every voice clip. Measured: voice mean ≈ −21 dB
+  unchanged, bed ≈ −32 dB.
+- `direction.json` `"atmosphere": false` turns it off; `{"music": 0.7,
+  "effects": 1.2}` scales the levels (1 = default).
+- Music never claims feelings: it follows the counts it is built from.
+
 ## 6. HyperFrames technical lessons
 
 - Every `<audio>` **must have an `id`**, or the renderer may drop it (silent

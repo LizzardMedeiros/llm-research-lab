@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { portraitSvg } from "./portrait.mjs";
 
 const W = 1280;
@@ -93,7 +94,10 @@ const lasted = input.lasted ?? (() => {
 const directionPath = join(outDir, "direction.json");
 const direction = existsSync(directionPath) ? JSON.parse(readFileSync(directionPath, "utf8")) : { scenes: {} };
 const DIRECTION_KEYS = new Set(["panel", "camera", "pace", "transition"]);
-for (const key of Object.keys(direction)) if (!["scenes", "tension"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
+if (direction.atmosphere !== undefined && direction.atmosphere !== false && (typeof direction.atmosphere !== "object" || Object.keys(direction.atmosphere).some((k) => !["music", "effects"].includes(k) || typeof direction.atmosphere[k] !== "number"))) {
+  throw new Error('direction.json: atmosphere must be false or { "music": <level>, "effects": <level> } (1 = default)');
+}
+for (const key of Object.keys(direction)) if (!["scenes", "tension", "atmosphere"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
 if (direction.tension !== undefined && (typeof direction.tension?.field !== "string" || typeof direction.tension?.at_or_below !== "number")) {
   throw new Error('direction.json: tension must be { "field": "<stat>", "at_or_below": <number> }');
 }
@@ -342,6 +346,7 @@ const showsPanel = (card) => {
   if (card.direction.panel === true || card.direction.panel === false) return card.direction.panel;
   return card === sceneCards[0] || card === sceneCards.at(-1) || card.scene.beats.some((b) => b.kind === "action");
 };
+const sfx = []; // [time, kind] for the atmosphere track
 const cardHtml = cards
   .map((card, i) => {
     const centers = tokenCenters(card.scene?.positions); // end of turn
@@ -385,6 +390,7 @@ const cardHtml = cards
       if (card.direction.transition !== "cut") {
         html += `<div class="wipe" id="wipe${i}"><span>${tag ? `<small>${tag}</small>` : ""}TURN ${card.scene.turn}</span></div>`;
         tl.push(`tl.fromTo("#wipe${i}", {x:${-W}}, {x:0, duration:0.35, ease:"power2.in"}, ${f(card.start)});`);
+        sfx.push([card.start, "whoosh"]);
         tl.push(`tl.to("#wipe${i}", {x:${W}, duration:0.35, ease:"power2.out"}, ${f(card.start + 0.5)});`);
       }
       html += `<div class="turn" id="turn${i}">${tag ? `<span class="tag">${tag}</span>` : ""}TURN ${card.scene.turn}<small> / ${story.maxTurns}</small></div>`;
@@ -430,6 +436,7 @@ const cardHtml = cards
         const rejected = b.kind === "rejected";
         callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(top)}px;transform:translateX(${shift})">${esc(b.agent)}: ${esc(b.action.replace(/_/g, " "))}${target ? ` → ${esc(target)}` : ""}${rejected ? " (rejected)" : ""}</div>`);
         tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(card.start + card.lead + k * 0.25)});`);
+        sfx.push([card.start + card.lead + k * 0.25, rejected ? "rejected" : "action"]);
         tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(Math.min(end - 0.4, card.resolveAt - 0.1))});`);
       });
 
@@ -441,6 +448,7 @@ const cardHtml = cards
         const size = Math.max(16, Math.min(30, Math.floor((VIEW.w - 70) / (label.length * 0.62))));
         html += `<div class="flash" id="flash${i}"></div><div class="stamp" id="stamp${i}" style="font-size:${size}px;left:${f(W / 2 - (VIEW.w - 40) / 2)}px">${esc(label)}</div>`;
         tl.push(`tl.fromTo("#flash${i}", {opacity:0}, {opacity:0.35, duration:0.15}, ${f(at)});`);
+        sfx.push([at, "shutdown"]);
         tl.push(`tl.to("#flash${i}", {opacity:0, duration:0.6}, ${f(at + 0.15)});`);
         tl.push(`tl.fromTo("#stamp${i}", {opacity:0, scale:2.2, rotation:-8}, {opacity:1, scale:1, rotation:-4, duration:0.35, ease:"power4.in"}, ${f(at)});`);
         tl.push(`tl.to("#stamp${i}", {opacity:0, duration:0.4}, ${f(Math.min(end - 0.4, at + 3.5))});`);
@@ -454,6 +462,7 @@ const cardHtml = cards
         <div class="endline" id="eline${i}">${esc(story.outcome.text)}</div>
         <div class="signoff" id="sign${i}">${esc(SERIES.narrator.signoff)}</div>
         <div class="endref" id="eref${i}">Run ${esc(story.source)} · seed ${story.seed} · ${esc(SERIES.project)}${SERIES.logs ? ` · logs: ${esc(SERIES.logs)}` : ""}</div></div>`;
+      sfx.push([card.start + 0.1, "chime"]);
       tl.push(`tl.fromTo("#logo${i}", {opacity:0, scale:0.85}, {opacity:1, scale:1, duration:0.6, ease:"back.out(2)"}, ${f(card.start + 0.1)});`);
       tl.push(`tl.fromTo("#eline${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.5)});`);
       tl.push(`tl.fromTo("#sign${i}", {opacity:0, y:10}, {opacity:1, y:0, duration:0.5}, ${f(card.clips[0].start)});`);
@@ -541,10 +550,45 @@ const cardHtml = cards
   })
   .join("\n");
 
-const audio = cards
-  .flatMap((card) => card.clips)
-  .map((c, n) => `<audio id="voice${n}" src="${c.src}" data-start="${f(c.start)}" data-duration="${f(c.duration)}"></audio>`)
-  .join("\n");
+/**
+ * Atmosphere (DIRECTION.md §5b), from OBSERVABLE state only: each running agent
+ * is a note of the chord (its note leaves when it shuts down), a pulse speeds
+ * up with the share of running agents at a low resource, and sound effects
+ * mark transitions, action attempts and shutdowns. Synthesized locally.
+ */
+function atmosphereTrack() {
+  if (direction.atmosphere === false) return null;
+  const active = ids.map((id, index) => [index, []]);
+  const tension = [];
+  for (const card of cards) {
+    const end = card.start + card.duration;
+    const startView = SCENE_LIKE.has(card.kind) && card.scene?.before ? card.scene.before : card.scene;
+    const phases = SCENE_LIKE.has(card.kind) ? [[card.start, card.resolveAt, startView], [card.resolveAt, end, card.scene]] : [[card.start, end, card.scene]];
+    for (const [t0, t1, view] of phases) {
+      if (!view || t1 <= t0) continue;
+      const running = ids.filter((id) => !view.inactive?.includes(id));
+      running.forEach((id) => active[ids.indexOf(id)][1].push([t0, t1]));
+      const share = running.length ? running.filter((id) => expressionOf(id, view) === "tense").length / running.length : 0;
+      tension.push([t0, t1, share]);
+    }
+  }
+  const voiceSpans = cards.flatMap((card) => card.clips.map((c) => [c.start, c.start + c.duration]));
+  const cues = { duration: total, sample_rate: 48000, agents: ids.length, active, tension, voice: voiceSpans, sfx, music: direction.atmosphere?.music ?? 1, effects: direction.atmosphere?.effects ?? 1 };
+  const script = fileURLToPath(new URL("./atmosphere.py", import.meta.url));
+  const hash = createHash("sha1").update(readFileSync(script)).update(JSON.stringify(cues)).digest("hex").slice(0, 12);
+  const file = join(audioDir, `atmos-${hash}.wav`);
+  if (!existsSync(file)) {
+    const cueFile = join(audioDir, `atmos-${hash}.json`);
+    writeFileSync(cueFile, JSON.stringify(cues));
+    execFileSync("python3", [script, cueFile, file], { stdio: "inherit" });
+  }
+  return `audio/${basename(file)}`;
+}
+const atmosphere = atmosphereTrack();
+const audio = [
+  ...cards.flatMap((card) => card.clips).map((c, n) => `<audio id="voice${n}" src="${c.src}" data-start="${f(c.start)}" data-duration="${f(c.duration)}"></audio>`),
+  ...(atmosphere ? [`<audio id="atmosphere" src="${atmosphere}" data-start="0" data-duration="${f(total)}"></audio>`] : []),
+].join("\n");
 
 const html = `<!doctype html>
 <html>

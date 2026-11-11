@@ -131,6 +131,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
   narrator persona "the Observer" with fixed greeting and sign-off). The
   greeting carries the AI-agents disclosure; the experiment card shows
   only rules logged in `experiment.started`.
+- Atmosphere (`video/atmosphere.py`) is synthesized locally from observable
+  state only: one chord note per running agent, a pulse from the share of
+  agents at a low resource, effects on transitions, attempts and shutdowns.
 - Video characters (`src/story/cast.ts`, `video/portrait.mjs`): names tied to
   the model family ("Bonsai 3"), id always visible next to the name, generated
   SVG portraits, expressions only from observable state (off / tense on a low
