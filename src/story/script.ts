@@ -1,6 +1,6 @@
 import { z } from "zod";
 import type { LabEvent } from "../events/event.js";
-import { buildCast } from "./cast.js";
+import { buildCast, ROSTER } from "./cast.js";
 import { indexRun, runMeta, runOutcome, sceneFacts, type StoryScene } from "./story.js";
 
 /**
@@ -33,7 +33,7 @@ export const ScriptSchema = z
     logline: z.string().trim().max(300).optional(),
     /** Optional per-agent character tweaks (names default to "<model family> <n>"). */
     cast: z
-      .record(z.string(), z.object({ name: z.string().trim().min(1).max(24).optional(), voice: z.string().optional(), presentation: z.enum(["feminine", "masculine"]).optional() }).strict())
+      .record(z.string(), z.object({ name: z.string().trim().min(1).max(24).optional(), voice: z.string().optional(), character: z.string().optional() }).strict())
       .optional(),
     scenes: z.array(SceneSchema).min(3).max(30),
   })
@@ -98,7 +98,11 @@ function resolve(script: Script, events: LabEvent[]) {
     title: script.title,
     logline: script.logline,
     ...runMeta(index),
-    cast: buildCast(runMeta(index).agents, script.cast ?? {}),
+    // Unknown characters are reported by checkScript; resolve without them.
+    cast: buildCast(
+      runMeta(index).agents,
+      Object.fromEntries(Object.entries(script.cast ?? {}).map(([id, c]) => [id, ROSTER.some((r) => r.key === c.character) ? c : { ...c, character: undefined }])),
+    ),
     lasted: index.lasted,
     outcome: runOutcome(index),
     scenes,
@@ -115,6 +119,9 @@ export function checkScript(input: unknown, events: LabEvent[]): CheckReport {
   const index = indexRun(events);
 
   for (const id of Object.keys(script.cast ?? {})) if (!index.ids.includes(id)) errors.push(`cast: "${id}" is not an agent of this run`);
+  for (const [id, c] of Object.entries(script.cast ?? {})) {
+    if (c.character && !ROSTER.some((r) => r.key === c.character)) errors.push(`cast: "${id}" asks for unknown character "${c.character}" (roster: ${ROSTER.map((r) => r.key).join(", ")})`);
+  }
   if (script.source !== `${index.experimentId}/${index.runId}`) {
     errors.push(`source "${script.source}" does not match the run log (${index.experimentId}/${index.runId})`);
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCast, familyOf } from "../../src/story/cast.js";
+import { buildCast, familyOf, ROSTER } from "../../src/story/cast.js";
 
 describe("familyOf", () => {
   it("names models by family and policies by their name", () => {
@@ -36,21 +36,25 @@ describe("buildCast", () => {
     expect(new Set(cast.map((c) => c.voice)).size).toBe(5);
   });
 
-  it("keeps voice and face consistent with an alternating presentation", () => {
-    const cast = buildCast([...agents, { id: "z", decider: "policy:random" }]);
-    expect(cast.map((c) => c.presentation)).toEqual(["feminine", "masculine", "feminine", "masculine", "feminine", "masculine"]);
-    for (const c of cast) {
-      expect(c.voice).toMatch(c.presentation === "feminine" ? /^[ab]f_/ : /^[ab]m_/);
-      if (c.presentation === "masculine") {
-        expect([1, 2]).not.toContain(c.portrait.hair); // no long hair or bun
-        expect([2, 3]).not.toContain(c.portrait.accessory); // no headband or earrings
-      }
-    }
-    expect(cast.every((c) => c.voice !== "bm_george")).toBe(true); // reserved for the narrator
-    const masculineHair = cast.filter((c) => c.presentation === "masculine").map((c) => c.portrait.hair);
-    expect(new Set(masculineHair).size).toBe(masculineHair.length); // no repeated hair style
-    const flipped = buildCast(agents, { q1: { presentation: "masculine" } });
-    expect(flipped[0]).toMatchObject({ presentation: "masculine", voice: expect.stringMatching(/^am_/) });
+  it("draws fixed roster characters, alternating woman/man, all distinct", () => {
+    const cast = buildCast(agents);
+    expect(cast.map((c) => c.character)).toEqual(["f1", "m1", "f2", "m2", "f3"]);
+    expect(cast.map((c) => c.presentation)).toEqual(["feminine", "masculine", "feminine", "masculine", "feminine"]);
+    // The first five cover all five looks.
+    expect(new Set(cast.map((c) => ROSTER.find((r) => r.key === c.character)!.look.split(" ").slice(0, -1).join(" "))).size).toBe(5);
+  });
+
+  it("has five women and five men with distinct voices that match them", () => {
+    expect(ROSTER.filter((c) => c.presentation === "feminine")).toHaveLength(5);
+    expect(new Set(ROSTER.map((c) => c.voice)).size).toBe(10);
+    for (const c of ROSTER) expect(c.voice).toMatch(c.presentation === "feminine" ? /^[ab]f_/ : /^[ab]m_/);
+    expect(ROSTER.some((c) => c.voice === "bm_george")).toBe(false); // the narrator's
+  });
+
+  it("lets a script pick a character without the others repeating it", () => {
+    const cast = buildCast(agents, { q2: { character: "f1" } });
+    expect(cast.map((c) => c.character)).toEqual(["f2", "f1", "f3", "m1", "f4"]);
+    expect(() => buildCast(agents, { q1: { character: "zz" } })).toThrow(/unknown character/);
   });
 
   it("is deterministic and gives agents different faces", () => {

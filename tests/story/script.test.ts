@@ -116,6 +116,8 @@ describe("checkScript", () => {
     expect(factSheet(report.resolved!)).toContain("- Keeper = h (holder), policy:scripted");
     const bad = checkScript(script([intro, mid, outcome()], { cast: { ghost: { name: "Nope" } } }), events);
     expect(bad.errors).toContain('cast: "ghost" is not an agent of this run');
+    const badCharacter = checkScript(script([intro, mid, outcome()], { cast: { h: { character: "zz" } } }), events);
+    expect(badCharacter.errors[0]).toMatch(/unknown character "zz"/);
   });
 
   it("produces a fact sheet that puts narration next to the logged facts", () => {

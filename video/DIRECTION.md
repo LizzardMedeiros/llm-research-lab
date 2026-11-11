@@ -38,19 +38,27 @@ the seed of a future skill: keep it current whenever the video changes.
   - Renaming one agent (script `cast`) never renumbers the others.
   - The **id stays visible** next to the name everywhere ("Bonsai 3 · b3"),
     because verbatim dialogue refers to agents by id.
-- **Portraits** are illustrated faces generated as SVG from deterministic
-  parameters (`video/portrait.mjs`: face, skin, hair, hair color,
-  accessory), on the character's color. No external art; any
+- **Fixed roster** (`ROSTER` in `src/story/cast.ts`): ten recurring
+  characters, five women and five men. Each group has one white, one
+  Asian, one Black, one brown (pardo) and one red-haired character, each
+  with a hand-set portrait and its own Kokoro voice (`af_`/`bf_` for
+  women, `am_`/`bm_` for men; `bm_george` is the narrator's).
+  - Agents draw characters in agent order, alternating woman/man:
+    f1 Black woman, m1 Asian man, f2 white woman, m2 pardo man,
+    f3 red-haired woman, m3 Black man, f4 Asian woman, m4 red-haired man,
+    f5 pardo woman, m5 white man. The first five agents cover all five
+    looks.
+  - Pick a character in the script `cast`: `{"b1": {"character": "m3"}}`;
+    other agents skip it. Past ten agents, characters repeat (id badge
+    and color still tell them apart).
+  - Lesson: faces and voices chosen independently mismatched
+    (power-struggle-bonsai-00002, b1 and b5); and two characters with the
+    same skin and hair read as one person (m2/f5 first draft). Check new
+    characters on a roster contact sheet before a render.
+- **Portraits** are illustrated SVG faces (`video/portrait.mjs`): face
+  shape, skin, hair style and color, accessory, eye shape (round or
+  almond) and freckles, on the character's color. No external art; any
   part can be overridden.
-- **Voice and face agree** through a `presentation` (feminine/masculine),
-  alternating in agent order. The voice comes from the matching Kokoro
-  pool (`af_`/`bf_` feminine, `am_`/`bm_` masculine; `bm_george` is the
-  narrator's). Hair and accessories come from the matching style set
-  (long hair, bun, headband and earrings are feminine only; short, buzz
-  and bald are masculine; curly and glasses fit both). Override with
-  script `cast`: `{"b1": {"presentation": "masculine"}}`. Lesson: a
-  face and voice chosen independently produced mismatches (b1, b5 in
-  power-struggle-bonsai-00002).
 - **Expressions follow observable state only:**
   - `off` when shut down (closed eyes, grayscale);
   - `tense` when the tension field is low;
