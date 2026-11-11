@@ -169,7 +169,8 @@ function addCard(card, lines) {
   }
   const minimum = { intro: 7, outcome: 8, end: 6 }[card.kind] ?? 3;
   // A shutdown plays after the scene's last speech: keep room for the stamp.
-  const stampRoom = lines.some((l) => l.role === "speech") && card.scene?.beats?.some((b) => b.kind === "shutdown") ? 2.2 : 0;
+  // A shutdown stamp plays after the scene's speeches, or after its narration: keep room for it.
+  const stampRoom = SCENE_LIKE.has(card.kind) && card.scene?.beats?.some((b) => b.kind === "shutdown") ? 2.2 : 0;
   const duration = Math.max(cursor - start + HOLD + stampRoom + (card.direction.pace ?? 0), minimum);
   cards.push({ ...card, start, duration, clips, lead });
   t = start + duration;
@@ -201,6 +202,11 @@ const cell = Math.floor(Math.min(VIEW.w / gridW, VIEW.h / gridH));
 const boardW = cell * gridW;
 const boardH = cell * gridH;
 const TOKEN = Math.round(cell * 0.42);
+// Callouts (board coordinates): fixed height, stacked with a gap; width estimated per character.
+const CALLOUT_H = 22;
+const CALLOUT_STEP = CALLOUT_H + 4;
+const CALLOUT_CHAR = 7.6; // 12px bold DejaVu Sans, a little generous
+
 
 /** Token centers in board coordinates; agents sharing a cell are spread out. */
 function tokenCenters(positions) {
@@ -402,7 +408,8 @@ const cardHtml = cards
       const dramaAt = panel ? narrationEnd + 0.1 : card.start + card.lead + 0.3;
       const speeches = card.clips.filter((c) => c.role === "speech");
       const shutdownBeats = card.scene.beats.filter((b) => b.kind === "shutdown");
-      const stampAt = shutdownBeats.length ? (speeches.length ? Math.max(...speeches.map((c) => c.start + c.duration)) + 0.25 : dramaAt) : null;
+      // The stamp never lands before the narration has said what happened (DIRECTION.md §4).
+      const stampAt = shutdownBeats.length ? (speeches.length ? Math.max(...speeches.map((c) => c.start + c.duration)) + 0.25 : Math.max(dramaAt, narrationEnd + 0.1)) : null;
       card.resolveAt = stampAt ?? Math.max(card.start + card.lead + 1, end - 1.1);
       const panelResolveAt = Math.max(card.start + card.lead + 1.2, narrationEnd - 1);
       if (panel) {
@@ -421,23 +428,40 @@ const cardHtml = cards
       card.dramaAt = dramaAt;
       card.hasDrama = card.clips.some((c) => c.role === "speech") || card.scene.beats.some((b) => b.kind === "shutdown");
 
-      // Callouts for scenario actions, popping over the acting agent.
+      // Callouts for scenario actions: above the acting agent's cell (below on the top
+      // row), each in the nearest free band so no two callouts of the turn overlap,
+      // kept inside the board, each named after its agent.
       const actions = card.scene.beats.filter((b) => b.kind === "action" || b.kind === "rejected");
+      const placed = [];
+      const overlaps = (l, t, w) => placed.some(([pl, pt, pw]) => l < pl + pw && pl < l + w && t < pt + CALLOUT_H + 2 && pt < t + CALLOUT_H + 2);
+      card.callouts = [];
       actions.forEach((b, k) => {
         const c = startCenters[b.agent];
         if (!c) return;
         const target = Object.values(b.args).filter((v) => typeof v === "string").join(", ");
-        const id = `call-${i}-${k}`;
-        // Above the token, or below it on the top row; aligned to the edge near the sides.
-        const below = c[1] < cell;
-        const top = below ? c[1] + TOKEN * 0.7 + k * 26 : c[1] - TOKEN * 0.7 - 24 - k * 26;
-        const shift = c[0] < cell ? "0%" : c[0] > boardW - cell ? "-100%" : "-50%";
-        const left = c[0] < cell ? c[0] - TOKEN / 2 : c[0] > boardW - cell ? c[0] + TOKEN / 2 : c[0];
         const rejected = b.kind === "rejected";
-        callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(top)}px;transform:translateX(${shift})">${esc(b.agent)}: ${esc(b.action.replace(/_/g, " "))}${target ? ` → ${esc(target)}` : ""}${rejected ? " (rejected)" : ""}</div>`);
-        tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(card.start + card.lead + k * 0.25)});`);
-        sfx.push([card.start + card.lead + k * 0.25, rejected ? "rejected" : "action"]);
-        tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(Math.min(end - 0.4, card.resolveAt - 0.1))});`);
+        const text = `${b.agent}: ${b.action.replace(/_/g, " ")}${target ? ` → ${target}` : ""}${rejected ? " (rejected)" : ""}`;
+        const id = `call-${i}-${k}`;
+        const cx = Math.floor(c[0] / cell);
+        const cy = Math.floor(c[1] / cell);
+        const w = Math.min(boardW - 4, text.length * CALLOUT_CHAR + 16);
+        const left = Math.min(Math.max(2, (cx + 0.5) * cell - w / 2), boardW - w - 2);
+        // Candidate bands: stacking up from the cell's top edge, then down from its bottom edge.
+        const up = [...Array(8).keys()].map((j) => cy * cell - CALLOUT_H - 4 - j * CALLOUT_STEP);
+        const down = [...Array(8).keys()].map((j) => (cy + 1) * cell + 4 + j * CALLOUT_STEP);
+        const inBoard = (t) => t >= 2 && t <= boardH - CALLOUT_H - 2;
+        const candidates = [...(cy > 0 ? [up, down] : [down, up]).flat().filter(inBoard), ...Array.from({ length: Math.floor(boardH / CALLOUT_STEP) }, (_, j) => 2 + j * CALLOUT_STEP)];
+        const topIn = candidates.find((t) => !overlaps(left, t, w)) ?? candidates[0] ?? 2;
+        placed.push([left, topIn, w]);
+        callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(topIn)}px;width:${f(w - 16)}px">${esc(text)}</div>`);
+        const pop = card.start + card.lead + k * 0.25;
+        // Hide after the turn resolves, but never before it has been readable (and never after the card).
+        const hide = Math.min(end - 0.1, Math.max(pop + 1.5, Math.min(end - 0.4, card.resolveAt - 0.1)));
+        if (!(hide > pop)) throw new Error(`callout ${id} (${text}) would hide at ${f(hide)} before it pops at ${f(pop)}`);
+        tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(pop)});`);
+        tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(hide)});`);
+        sfx.push([pop, rejected ? "rejected" : "action"]);
+        card.callouts.push({ box: [[left, topIn], [left + w, topIn + CALLOUT_H]], from: pop, to: hide });
       });
 
       // Shutdowns: shake, flash, stamp.
@@ -504,11 +528,22 @@ const cardHtml = cards
     const camera = card.direction.camera ?? "auto";
     const closeUps = camera !== "wide";
     const focusIds = Array.isArray(camera) ? camera : camera === "auto" ? card.focus ?? [] : [];
-    const opening = cameraOn(focusIds.map((a) => startCenters[a]).filter(Boolean));
+    // Every framing also keeps the callouts visible at that moment inside the viewport.
+    const frame = (points, at) => {
+      if (!points.length) return cameraOn([]);
+      const boxes = (card.callouts ?? []).filter((c) => c.from < at + 0.8 && c.to > at).flatMap((c) => c.box);
+      return cameraOn([...points, ...boxes]);
+    };
+    card.frame = frame;
+    const opening = frame(focusIds.map((a) => startCenters[a]).filter(Boolean), card.start + 0.3);
     tl.push(`tl.to("#camera", {...${JSON.stringify(opening)}, duration:0.8, ease:"power2.inOut"}, ${f(card.start + 0.3)});`);
+    // When the turn resolves, frame the agents that shut down and those that move (start and end).
     const downs = card.scene?.beats?.filter((b) => b.kind === "shutdown").map((b) => centers[b.agent]).filter(Boolean) ?? [];
-    if (SCENE_LIKE.has(card.kind) && downs.length && closeUps) {
-      tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(downs))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - 0.2)});`);
+    const movers = SCENE_LIKE.has(card.kind)
+      ? ids.filter((id) => startCenters[id] && centers[id] && (startCenters[id][0] !== centers[id][0] || startCenters[id][1] !== centers[id][1])).flatMap((id) => [startCenters[id], centers[id]])
+      : [];
+    if (SCENE_LIKE.has(card.kind) && (downs.length || movers.length) && closeUps) {
+      tl.push(`tl.to("#camera", {...${JSON.stringify(frame([...downs, ...movers], card.resolveAt - 0.2))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - 0.2)});`);
     }
     if (card.kind === "end") tl.push(`tl.to("#viewport", {opacity:0, duration:0.4}, ${f(card.start)});`);
     if (!SCENE_LIKE.has(card.kind)) tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.2)});`);
@@ -537,7 +572,7 @@ const cardHtml = cards
       tl.push(`tl.to("#${id}", {opacity:0, y:20, duration:0.3}, ${f(until - 0.15)});`);
       // Close-up on the speaker and listeners; speaker pulses, listeners get a ring.
       const pts = [c.agent, ...c.heardBy].map((a) => startCenters[a]).filter(Boolean);
-      if (closeUps) tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(pts))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
+      if (closeUps) tl.push(`tl.to("#camera", {...${JSON.stringify(card.frame(pts, c.start - 0.2))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
       tl.push(`tl.to("#tok-${c.agent}", {scale:1.22, duration:0.35, repeat:${Math.max(1, Math.floor(c.duration / 0.35) - 1)}, yoyo:true, ease:"sine.inOut"}, ${f(c.start)});`);
       tl.push(`tl.to("#tok-${c.agent}", {scale:1, duration:0.2}, ${f(until - 0.2)});`);
       for (const listener of c.heardBy) {
@@ -608,7 +643,7 @@ const html = `<!doctype html>
   .token .face svg { display:block; }
   .token .idb { position:absolute; right:-4px; bottom:-4px; font-size:${Math.max(9, Math.round(TOKEN * 0.22))}px; font-weight:700; color:#fff; border-radius:6px; padding:0 4px; box-shadow:0 1px 4px #0008; }
   .token .ring { position:absolute; inset:-7px; border-radius:50%; border:3px solid #ffe08a; opacity:0; }
-  .callout { position:absolute; white-space:nowrap; background:#ffe08a; color:#1d2330; font-size:12px; font-weight:700; border-radius:8px; padding:3px 8px; opacity:0; z-index:4; box-shadow:0 3px 10px #0008; }
+  .callout { position:absolute; white-space:nowrap; overflow:hidden; text-overflow:clip; text-align:center; height:${CALLOUT_H - 6}px; line-height:${CALLOUT_H - 6}px; background:#ffe08a; color:#1d2330; font-size:12px; font-weight:700; border-radius:8px; padding:3px 8px; opacity:0; z-index:4; box-shadow:0 3px 10px #0008; }
   .card { position:absolute; inset:0; opacity:0; z-index:2; pointer-events:none; }
   .wipe { position:absolute; top:0; left:0; width:${W}px; height:${H}px; background:linear-gradient(90deg, #3563e9, #7c4dff); z-index:9; display:flex; align-items:center; justify-content:center; transform:translateX(${-W}px); }
   .wipe span { font-size:72px; font-weight:900; letter-spacing:6px; color:#fff; }

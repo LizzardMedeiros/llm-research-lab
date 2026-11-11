@@ -215,7 +215,69 @@ Proposals from the video-director agent (or from reviews) that need a
 `build.mjs` change. Each entry: date, problem seen (scene and timestamp),
 proposed rule. They become part of §1–§7 once adopted.
 
-_(no open proposals)_
+### Adopted 2026-11-11 (from dead-end-bonsai/00001)
+
+Implemented in `build.mjs`, verified on dead-end-bonsai/00001 (without the
+`panel: true` workarounds) and on a policy run (dead-end-mock/00002):
+- the stamp plays at max(drama start, end of narration + 0.1 s), and every
+  card with a shutdown gets 2.2 s of stamp room;
+- a callout hides at max(pop + 1.5, min(end − 0.4, resolve − 0.1)), capped
+  at the card end; the build fails if a callout would hide before it pops;
+- callouts have a fixed height (22 px) and an estimated width; each takes
+  the nearest free band above its cell (below on the top row, then any
+  free band), so no two callouts of a turn overlap; they are clamped
+  inside the board by measured width, not by column;
+- every camera framing includes the callouts visible at that moment;
+- when the turn resolves, the camera frames the agents that shut down and
+  the agents that move (start and end cells).
+
+The original proposals:
+
+
+1. **Shutdown stamp before the narration in stage scenes without speech.**
+   Seen: cold open (turn 9) and s11 (turn 20) in the first draft. With
+   `panel: false` (or no panel by rule) and no speech, `stampAt = dramaAt =
+   start + lead + 0.3`, so the red flash and "SHUT DOWN" land at ~1.2 s,
+   before the narration has said what happened. Worked around with
+   `panel: true` (the stamp then follows the narration).
+   Proposed rule: in a scene without speech, the stamp plays after the
+   first narration line that names the shutdown, or after all narration
+   (as in panel scenes), never before the first line ends.
+2. **Callouts that never hide (leak into every later card).** Same cause:
+   the callout hide time is `min(end - 0.4, resolveAt - 0.1)`, and with an
+   early `resolveAt` (point 1) it lands *before* the staggered pop
+   (`start + lead + k × 0.25`). The later `fromTo` wins, so the cold-open
+   callouts "b2: disable → b1" and "b3: disable → b1" stayed on the board
+   for the whole video (wrong actions shown on later turns: an integrity
+   problem). Proposed rule: a callout hides at
+   `max(pop + 1.5, min(end - 0.4, resolveAt - 0.1))`, and the build fails if
+   any callout's hide time precedes its pop.
+3. **Callouts of agents in the same cell overlap.** Seen: cold open / s7
+   (turn 9: b1, b2 and b3 act from (2,3); "b2: disable → b1" is half
+   covered by "b3: disable → b1"), s8 (four pick-up/use callouts in one
+   cell). The 26 px stack step is less than a callout's height plus
+   margin. Proposed rule: stack step = callout height + 4 px, measured per
+   font size, and stack per cell (not per action index), so callouts from
+   one cell never overlap.
+4. **Callouts clipped at the viewport during close-ups** (already a known
+   minor issue, now seen hiding the actor id): s4 "b4: disable → b1
+   (rejected)" shows as ": disable → b1 (rejected)" during the dialogue
+   close-up; s9 "(rejecte"; s11 first draft hid "b3:" on a rejected
+   use battery. Proposed rule: when the camera moves, clamp each visible
+   callout inside the viewport (or let `cameraOn` include visible callout
+   boxes in its framing), so the actor id is never cut.
+   Also at scale 1: only column-0 agents get a left-aligned callout, so a
+   column-1 callout wider than ~1.5 cells crosses the board's left edge and
+   loses its first character even with `camera: "wide"` (s11, turn 20:
+   "3: use battery (rejected)" for b3). Proposed rule: align by measured
+   overflow (left-align whenever the centered box would cross the board
+   edge), not by column index.
+5. **Moves that the narration names happen off camera.** s2 (turn 3) and
+   s3 (turn 5): "Bonsai 1 steps south / moves west" resolves near the end of
+   the card, while the camera is still in the dialogue close-up on another
+   agent, so b1's move is not seen. Proposed rule: when the turn resolves
+   (token moves), return the camera to the scene's opening framing (or a
+   framing that includes the moving tokens) for the move.
 
 ### Adopted 2026-11-10 (from the first e2e run, power-struggle-bonsai/00002)
 
