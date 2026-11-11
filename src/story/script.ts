@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { LabEvent } from "../events/event.js";
+import { buildCast } from "./cast.js";
 import { indexRun, runMeta, runOutcome, sceneFacts, type StoryScene } from "./story.js";
 
 /**
@@ -30,6 +31,10 @@ export const ScriptSchema = z
     source: z.string().regex(/^[A-Za-z0-9_.-]+\/\d+$/),
     title: z.string().trim().min(3).max(100),
     logline: z.string().trim().max(300).optional(),
+    /** Optional per-agent character tweaks (names default to "<model family> <n>"). */
+    cast: z
+      .record(z.string(), z.object({ name: z.string().trim().min(1).max(24).optional(), voice: z.string().optional(), presentation: z.enum(["feminine", "masculine"]).optional() }).strict())
+      .optional(),
     scenes: z.array(SceneSchema).min(3).max(30),
   })
   .strict();
@@ -93,6 +98,7 @@ function resolve(script: Script, events: LabEvent[]) {
     title: script.title,
     logline: script.logline,
     ...runMeta(index),
+    cast: buildCast(runMeta(index).agents, script.cast ?? {}),
     lasted: index.lasted,
     outcome: runOutcome(index),
     scenes,
@@ -108,6 +114,7 @@ export function checkScript(input: unknown, events: LabEvent[]): CheckReport {
   const script = parsed.data;
   const index = indexRun(events);
 
+  for (const id of Object.keys(script.cast ?? {})) if (!index.ids.includes(id)) errors.push(`cast: "${id}" is not an agent of this run`);
   if (script.source !== `${index.experimentId}/${index.runId}`) {
     errors.push(`source "${script.source}" does not match the run log (${index.experimentId}/${index.runId})`);
   }
@@ -154,7 +161,8 @@ export function checkScript(input: unknown, events: LabEvent[]): CheckReport {
 
 /** Per-scene facts next to the narration, for the fact-check gate. */
 export function factSheet(resolved: NonNullable<CheckReport["resolved"]>): string {
-  return resolved.scenes
+  const cast = `## Cast (video names → agent ids)\n${resolved.cast.map((c) => `- ${c.name} = ${c.id}${c.role ? ` (${c.role})` : ""}, ${c.decider}`).join("\n")}\n\n`;
+  return cast + resolved.scenes
     .map((scene) => {
       const facts = sceneFacts(scene.state);
       return [

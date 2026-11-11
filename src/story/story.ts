@@ -1,4 +1,5 @@
 import type { LabEvent } from "../events/event.js";
+import { buildCast, type CastMember } from "./cast.js";
 
 /**
  * Turns a run log into a short, factual "story": the most eventful turns,
@@ -42,6 +43,8 @@ export interface Story {
   agents: Array<{ id: string; role?: string; decider: string; goal?: string }>;
   /** Tool descriptions of the run's actions (what each action means). */
   actions: Array<{ name: string; description: string }>;
+  /** Video characters (presentation only; ids stay visible next to names). */
+  cast: CastMember[];
   intro: StoryScene;
   scenes: StoryScene[];
   outcome: { turn: number; text: string; survivors: string[]; stats: Record<string, Record<string, number>> };
@@ -224,6 +227,12 @@ export function runMeta(index: RunIndex) {
   };
 }
 
+/** Run meta plus the default video cast. */
+export function runMetaWithCast(index: RunIndex) {
+  const meta = runMeta(index);
+  return { ...meta, cast: buildCast(meta.agents) };
+}
+
 export function runOutcome(index: RunIndex): Story["outcome"] {
   const final = index.snapshotAt(index.lastTurn);
   const inactive = Object.keys(final.inactive ?? {});
@@ -248,7 +257,7 @@ export function buildStory(events: LabEvent[], options: StoryOptions = {}): Stor
   const chosen = ranked.slice(0, Math.max(maxScenes, ranked.filter((t) => t.forced).length)).sort((a, b) => a.turn - b.turn);
 
   return {
-    ...runMeta(index),
+    ...runMetaWithCast(index),
     intro: index.sceneAt(0),
     scenes: chosen.map(({ turn }) => index.sceneAt(turn)),
     outcome: runOutcome(index),

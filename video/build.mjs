@@ -20,6 +20,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
+import { portraitSvg } from "./portrait.mjs";
 
 const W = 1280;
 const H = 720;
@@ -90,6 +91,10 @@ const lasted = input.lasted ?? (() => {
 const directionPath = join(outDir, "direction.json");
 const direction = existsSync(directionPath) ? JSON.parse(readFileSync(directionPath, "utf8")) : { scenes: {} };
 const DIRECTION_KEYS = new Set(["panel", "camera", "pace", "transition"]);
+for (const key of Object.keys(direction)) if (!["scenes", "tension"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
+if (direction.tension !== undefined && (typeof direction.tension?.field !== "string" || typeof direction.tension?.at_or_below !== "number")) {
+  throw new Error('direction.json: tension must be { "field": "<stat>", "at_or_below": <number> }');
+}
 for (const [id, d] of Object.entries(direction.scenes ?? {})) {
   if (!plan.some((sc) => sc.id === id)) throw new Error(`direction.json: unknown scene id "${id}"`);
   for (const key of Object.keys(d)) if (!DIRECTION_KEYS.has(key)) throw new Error(`direction.json: scene "${id}": unknown key "${key}"`);
@@ -105,7 +110,20 @@ mkdirSync(audioDir, { recursive: true });
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const ids = story.agents.map((a) => a.id);
 const color = (id) => COLORS[ids.indexOf(id) % COLORS.length];
-const voice = (id) => AGENT_VOICES[ids.indexOf(id) % AGENT_VOICES.length];
+// Characters (presentation only). Older story files have no cast: fall back to ids.
+const castById = new Map((story.cast ?? []).map((c) => [c.id, c]));
+const member = (id) =>
+  castById.get(id) ?? {
+    id,
+    name: id,
+    voice: AGENT_VOICES[ids.indexOf(id) % AGENT_VOICES.length],
+    portrait: { face: ids.indexOf(id) % 3, skin: (ids.indexOf(id) * 2) % 6, hair: ids.indexOf(id) % 6, hairColor: (ids.indexOf(id) * 3) % 6, accessory: ids.indexOf(id) % 4 },
+  };
+const voice = (id) => member(id).voice;
+/** "Bonsai 3 · b3" (just the id when the character has no own name). */
+const nameOf = (id) => (member(id).name === id ? id : `${member(id).name} · ${id}`);
+const shortName = (id) => member(id).name;
+const portrait = (id, expression, size) => portraitSvg(member(id).portrait, expression, color(id), size);
 const f = (n) => Number(n).toFixed(2);
 
 function spokenPart(text) {
@@ -228,6 +246,22 @@ for (const card of cards) {
 }
 const pct = (k, v) => (statMax[k] ? Math.round((v / statMax[k]) * 100) : 0);
 
+/**
+ * Expression from OBSERVABLE state only: "off" when shut down, "tense" when the
+ * tension field is low (default: the first per-agent numeric field at ≤ 15% of
+ * its max in this video; override with direction.json "tension"), else "neutral".
+ */
+const tensionField = direction.tension?.field ?? Object.keys(statMax)[0];
+const tensionAt = direction.tension?.at_or_below ?? (tensionField ? Math.floor((statMax[tensionField] ?? 0) * 0.15) : null);
+const expressionOf = (id, view) => {
+  if (view?.inactive?.includes(id)) return "off";
+  const v = tensionField ? view?.stats?.[id]?.[tensionField] : undefined;
+  return typeof v === "number" && tensionAt !== null && v <= tensionAt ? "tense" : "neutral";
+};
+const setExpression = (id, expression, at) => {
+  for (const x of ["neutral", "tense", "off"]) tl.push(`tl.to("#face-${id}-${x}", {opacity:${x === expression ? 1 : 0}, duration:0.25}, ${f(at)});`);
+};
+
 
 // ---------- HTML ----------
 const boardCells = rows
@@ -243,7 +277,7 @@ const tokens = ids
   .map(
     (id) => `<div class="token" id="tok-${esc(id)}" style="width:${TOKEN}px;height:${TOKEN}px">
       <div class="ring" id="ring-${esc(id)}"></div>
-      <div class="disc" style="background:${color(id)}">${esc(id)}</div>
+      <div class="disc">${["neutral", "tense", "off"].map((x) => `<div class="face" id="face-${esc(id)}-${x}" style="opacity:${x === "neutral" ? 1 : 0}">${portrait(id, x, TOKEN)}</div>`).join("")}<span class="idb" style="background:${color(id)}">${esc(id)}</span></div>
     </div>`,
   )
   .join("");
@@ -285,7 +319,7 @@ function statsPanel(card, i, prev, resolveAt) {
         tl.push(`tl.to("#row-${i}-${r}", {opacity:0.4, duration:0.5}, ${f(resolveAt)});`);
         tl.push(`tl.to("#dead-${i}-${r}", {opacity:1, duration:0.3}, ${f(resolveAt)});`);
       }
-      return `<div class="agent" id="row-${i}-${r}"><div class="name"><b style="background:${color(a.id)}">${esc(a.id)}</b>${a.role ? `<em>${esc(a.role)}</em>` : ""}${dead}</div><div class="stats">${bars}</div></div>`;
+      return `<div class="agent" id="row-${i}-${r}"><div class="name"><span class="mini">${portrait(a.id, expressionOf(a.id, before), 26)}</span><span class="nm">${esc(shortName(a.id))}</span><span class="id">${esc(a.id)}</span>${a.role ? `<em>${esc(a.role)}</em>` : ""}${dead}</div><div class="stats">${bars}</div></div>`;
     })
     .join("")}</div>`;
 }
@@ -314,16 +348,17 @@ const cardHtml = cards
     tl.push(`tl.fromTo("#card${i}", {opacity:0}, {opacity:1, duration:0.35}, ${f(card.start)});`);
 
     if (card.kind === "intro") {
-      const titleSize = story.title.length <= 18 ? 52 : story.title.length <= 28 ? 40 : 32;
+      const titleSize = story.title.length <= 18 ? 50 : story.title.length <= 28 ? 38 : 30;
       html += `<div class="intro-block"><div class="title" id="title${i}" style="font-size:${titleSize}px">${esc(story.title)}</div>
         <div class="subtitle" id="sub${i}">${story.logline ? `${esc(story.logline)}<br>` : ""}<span class="meta">${esc(story.scenario.name)} · ${esc(story.experimentId)} · run ${esc(story.runId)} · seed ${story.seed} · ${story.agents.length} agents</span></div>
         <div class="cast">${story.agents
           .map((a, r) => {
             tl.push(`tl.fromTo("#cast${r}", {opacity:0, y:20}, {opacity:1, y:0, duration:0.45, ease:"back.out(2)"}, ${f(card.start + 0.9 + r * 0.25)});`);
             if (i === 0) tl.push(`tl.fromTo("#tok-${a.id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.9 + r * 0.25)});`);
-            return `<div id="cast${r}"><b style="background:${color(a.id)}">${esc(a.id)}</b>${a.role ? ` <em>${esc(a.role)}</em>` : ""} <span>${esc(a.decider)}</span></div>`;
+            return `<div id="cast${r}" class="castrow"><span class="mini">${portrait(a.id, "neutral", 30)}</span><b class="nm">${esc(shortName(a.id))}</b><span class="id">${esc(a.id)}</span>${a.role ? `<em>${esc(a.role)}</em>` : ""}<span class="model">${esc(a.decider)}</span></div>`;
           })
-          .join("")}</div></div>`;
+          .join("")}</div><div class="disclose" id="disc${i}">Every character is an AI agent; names and faces are illustrative. Names come from each agent's model.</div></div>`;
+      tl.push(`tl.fromTo("#disc${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 2.4)});`);
       tl.push(`tl.fromTo("#title${i}", {opacity:0, x:-60}, {opacity:1, x:0, duration:0.6, ease:"power3.out"}, ${f(card.start + 0.1)});`);
       tl.push(`tl.fromTo("#sub${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.5)});`);
     } else if (SCENE_LIKE.has(card.kind)) {
@@ -384,7 +419,7 @@ const cardHtml = cards
       const downs = card.scene.beats.filter((b) => b.kind === "shutdown");
       if (downs.length) {
         const at = stampAt;
-        const label = `SHUT DOWN: ${downs.map((d) => d.agent).join(" · ")}`;
+        const label = `SHUT DOWN: ${downs.map((d) => shortName(d.agent)).join(" · ")}`;
         const size = Math.max(16, Math.min(30, Math.floor((VIEW.w - 70) / (label.length * 0.62))));
         html += `<div class="flash" id="flash${i}"></div><div class="stamp" id="stamp${i}" style="font-size:${size}px;left:${f(W / 2 - (VIEW.w - 40) / 2)}px">${esc(label)}</div>`;
         tl.push(`tl.fromTo("#flash${i}", {opacity:0}, {opacity:0.35, duration:0.15}, ${f(at)});`);
@@ -403,7 +438,7 @@ const cardHtml = cards
         <div class="chart"><div class="chart-title">Turns each agent stayed running (of ${maxT})</div>${ids
           .map((id, r) => {
             tl.push(`tl.fromTo("#lv-${id}", {width:"0%"}, {width:"${Math.round((lasted[id] / maxT) * 100)}%", duration:1.1, ease:"power2.out"}, ${f(card.start + 0.8 + r * 0.15)});`);
-            return `<div class="crow"><b style="background:${color(id)}">${esc(id)}</b><span class="cbar"><i id="lv-${id}" style="background:${color(id)}"></i></span><span class="cv">${lasted[id]}</span></div>`;
+            return `<div class="crow"><span class="who2"><span class="mini">${portrait(id, story.outcome.survivors.includes(id) ? "neutral" : "off", 26)}</span>${esc(shortName(id))}</span><span class="cbar"><i id="lv-${id}" style="background:${color(id)}"></i></span><span class="cv">${lasted[id]}</span></div>`;
           })
           .join("")}</div>`;
       tl.push(`tl.fromTo("#title${i}", {opacity:0, y:-20}, {opacity:1, y:0, duration:0.5}, ${f(card.start + 0.1)});`);
@@ -417,6 +452,7 @@ const cardHtml = cards
       const off = startView?.inactive?.includes(id);
       const at = SCENE_LIKE.has(card.kind) ? card.start + 0.5 : card.start;
       tl.push(`tl.to("#tok-${id}", {x:${f(c[0] - TOKEN / 2)}, y:${f(c[1] - TOKEN / 2)}, opacity:${off ? 0.25 : 1}, duration:${i === 0 ? 0.01 : 0.9}, ease:"power2.inOut"}, ${f(at)});`);
+      setExpression(id, expressionOf(id, startView), at);
       // The first card of the video brings the tokens in (the intro does it when it opens the video).
       if (i === 0 && card.kind !== "intro") tl.push(`tl.fromTo("#tok-${id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.7 + r * 0.15)});`);
       const e = centers[id];
@@ -424,6 +460,7 @@ const cardHtml = cards
       if (SCENE_LIKE.has(card.kind) && e && (e[0] !== c[0] || e[1] !== c[1] || offAfter !== off)) {
         tl.push(`tl.to("#tok-${id}", {x:${f(e[0] - TOKEN / 2)}, y:${f(e[1] - TOKEN / 2)}, opacity:${offAfter ? 0.25 : 1}, duration:0.8, ease:"power2.inOut"}, ${f(card.resolveAt)});`);
       }
+      if (SCENE_LIKE.has(card.kind) && expressionOf(id, card.scene) !== expressionOf(id, startView)) setExpression(id, expressionOf(id, card.scene), card.resolveAt);
     });
 
     // Camera: wide at the start of the card (or on the director's / script's focus);
@@ -455,7 +492,8 @@ const cardHtml = cards
         return;
       }
       html += `<div class="dialogue" id="${id}">
-          <div class="who"><b style="background:${color(c.agent)}">${esc(c.agent)}</b> <span>→ heard by ${esc(c.heardBy.join(", ") || "nobody (no agent in range)")}</span></div>
+          <div class="speaker">${portrait(c.agent, expressionOf(c.agent, card.scene?.before ?? card.scene), 64)}</div>
+          <div class="who"><b style="background:${color(c.agent)}">${esc(nameOf(c.agent))}</b> <span>→ heard by ${esc(c.heardBy.map((h) => nameOf(h)).join(", ") || "nobody (no agent in range)")}</span></div>
           <div class="quote">“${esc(c.text)}”</div></div>`;
       tl.push(`tl.fromTo("#${id}", {opacity:0, y:50}, {opacity:1, y:0, duration:0.4, ease:"power3.out"}, ${f(c.start - 0.1)});`);
       tl.push(`tl.to("#${id}", {opacity:0, y:20, duration:0.3}, ${f(until - 0.15)});`);
@@ -492,7 +530,10 @@ const html = `<!doctype html>
   .cell.wall { background:#4a5162; }
   .cell span { position:absolute; top:4px; left:7px; font-size:11px; color:#6b7385; }
   .token { position:absolute; left:0; top:0; z-index:3; }
-  .token .disc { position:absolute; inset:0; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:${Math.max(11, Math.round(TOKEN * 0.32))}px; color:#fff; box-shadow:0 2px 8px #0009; }
+  .token .disc { position:absolute; inset:0; border-radius:50%; box-shadow:0 2px 8px #0009; }
+  .token .face { position:absolute; inset:0; }
+  .token .face svg { display:block; }
+  .token .idb { position:absolute; right:-4px; bottom:-4px; font-size:${Math.max(9, Math.round(TOKEN * 0.22))}px; font-weight:700; color:#fff; border-radius:6px; padding:0 4px; box-shadow:0 1px 4px #0008; }
   .token .ring { position:absolute; inset:-7px; border-radius:50%; border:3px solid #ffe08a; opacity:0; }
   .callout { position:absolute; white-space:nowrap; background:#ffe08a; color:#1d2330; font-size:12px; font-weight:700; border-radius:8px; padding:3px 8px; opacity:0; z-index:4; box-shadow:0 3px 10px #0008; }
   .card { position:absolute; inset:0; opacity:0; z-index:2; pointer-events:none; }
@@ -507,15 +548,26 @@ const html = `<!doctype html>
   .title { position:absolute; left:460px; top:110px; font-size:52px; font-weight:800; text-transform:uppercase; letter-spacing:3px; opacity:0; }
   .title.small { font-size:44px; top:100px; }
   .subtitle { position:absolute; left:460px; top:175px; width:780px; font-size:20px; color:#aab3c5; opacity:0; }
-  .intro-block { position:absolute; left:460px; top:96px; width:780px; display:flex; flex-direction:column; gap:14px; }
+  .intro-block { position:absolute; left:460px; top:90px; width:780px; display:flex; flex-direction:column; gap:10px; }
   .intro-block .title, .intro-block .subtitle { position:static; width:auto; }
-  .cast { font-size:20px; display:grid; gap:8px; margin-top:6px; }
+  .cast { font-size:18px; display:grid; gap:5px; margin-top:4px; }
   .cast > div { opacity:0; }
   .cast span { color:#aab3c5; }
   b { color:#fff; border-radius:6px; padding:1px 8px; }
   em { font-style:normal; font-size:14px; color:#f0a83a; border:1px solid #f0a83a; border-radius:5px; padding:0 5px; margin-left:6px; }
   .panel { position:absolute; left:460px; top:110px; width:780px; display:grid; gap:6px; }
-  .agent { background:#161d29; border-radius:10px; padding:6px 12px; display:grid; grid-template-columns:150px 1fr; align-items:center; height:30px; opacity:0; }
+  .agent { background:#161d29; border-radius:10px; padding:6px 12px; display:grid; grid-template-columns:220px 1fr; align-items:center; height:30px; opacity:0; }
+  .mini { display:inline-flex; vertical-align:middle; margin-right:8px; }
+  .mini svg { border-radius:50%; }
+  .nm { font-weight:700; }
+  .id { font-size:12px; color:#7d879a; margin-left:6px; }
+  .castrow { display:flex; align-items:center; gap:2px; }
+  .disclose { font-size:14px; color:#9aa2b4; font-style:italic; opacity:0; margin-top:4px; }
+  .castrow .model { color:#aab3c5; margin-left:10px; font-size:17px; }
+  .castrow .nm { background:none; padding:0; }
+  .dialogue .speaker { position:absolute; left:-14px; top:-22px; border-radius:50%; box-shadow:0 4px 14px #0009; }
+  .dialogue .speaker svg { display:block; border-radius:50%; }
+  .who2 { display:flex; align-items:center; font-weight:700; }
   .agent .name { font-size:16px; white-space:nowrap; }
   .agent .dead { color:#ff6b60; font-size:12px; margin-left:6px; }
   .agent .stats { display:grid; grid-auto-flow:column; grid-auto-columns:1fr; gap:16px; }
@@ -527,17 +579,17 @@ const html = `<!doctype html>
   .stat .v i.after { position:absolute; right:0; top:0; opacity:0; }
   .callout.rejected { background:#9aa2b4; color:#1d2330; }
   .narration { position:absolute; left:460px; right:40px; top:${110 + story.agents.length * 48 + 14}px; font-size:21px; line-height:1.35; font-style:italic; color:#cfd6e4; opacity:0; }
-  .intro-narration { top:${VIEW.y + VIEW.h + 24}px; left:${VIEW.x}px; }
+  .narration.intro-narration { top:${VIEW.y + VIEW.h + 22}px; left:${VIEW.x}px; right:${W - VIEW.x - VIEW.w}px; font-size:19px; }
   .narration.outcome-narration { top:${VIEW.y + VIEW.h + 30}px; left:${VIEW.x}px; right:40px; font-size:20px; }
   .narration.caption { left:120px; right:120px; top:${f(STAGE_BOTTOM + 22)}px; text-align:center; font-size:23px; }
-  .dialogue { position:absolute; left:40px; right:40px; top:${f(STAGE_BOTTOM + 14)}px; min-height:96px; background:#f5f1e6; color:#1d2330; border-radius:14px; padding:14px 20px; opacity:0; z-index:5; box-shadow:0 6px 24px #000a; }
+  .dialogue { position:absolute; left:40px; right:40px; top:${f(STAGE_BOTTOM + 14)}px; min-height:96px; background:#f5f1e6; color:#1d2330; border-radius:14px; padding:14px 20px 14px 70px; opacity:0; z-index:5; box-shadow:0 6px 24px #000a; }
   .dialogue .who { font-size:15px; margin-bottom:6px; color:#59606e; }
   .dialogue .quote { font-size:21px; line-height:1.35; }
   .flash { position:absolute; inset:0; background:#ff3b30; opacity:0; z-index:8; }
   .stamp { position:absolute; left:${VIEW.x + 20}px; top:${VIEW.y + VIEW.h / 2 - 30}px; width:${VIEW.w - 40}px; text-align:center; font-size:30px; font-weight:900; color:#ff6b60; border:4px solid #ff6b60; border-radius:10px; padding:6px 0; background:#0e1117cc; opacity:0; z-index:6; }
   .chart { position:absolute; left:460px; top:240px; width:760px; display:grid; gap:12px; }
   .chart-title { font-size:15px; color:#aab3c5; margin-bottom:4px; }
-  .crow { display:grid; grid-template-columns:60px 1fr 40px; gap:12px; align-items:center; }
+  .crow { display:grid; grid-template-columns:150px 1fr 40px; gap:12px; align-items:center; }
   .cbar { height:18px; border-radius:6px; }
   .cbar i { width:0; border-radius:6px; }
   .cv { text-align:right; font-weight:700; }

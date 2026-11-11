@@ -29,6 +29,52 @@ the seed of a future skill: keep it current whenever the video changes.
 - Intro card (title, run, seed, cast with roles and models) and outcome card
   (outcome text and survival chart).
 
+## 2b. Characters (humanization phase 1)
+
+- Each agent has a character, for presentation only (`src/story/cast.ts`).
+  - The **name is tied to the model family**, numbered within the family
+    in agent order: five Bonsai agents become "Bonsai 1".."Bonsai 5";
+    policies get their policy name ("Random", "Talker").
+  - Renaming one agent (script `cast`) never renumbers the others.
+  - The **id stays visible** next to the name everywhere ("Bonsai 3 · b3"),
+    because verbatim dialogue refers to agents by id.
+- **Portraits** are illustrated faces generated as SVG from deterministic
+  parameters (`video/portrait.mjs`: face, skin, hair, hair color,
+  accessory), on the character's color. No external art; any
+  part can be overridden.
+- **Voice and face agree** through a `presentation` (feminine/masculine),
+  alternating in agent order. The voice comes from the matching Kokoro
+  pool (`af_`/`bf_` feminine, `am_`/`bm_` masculine; `bm_george` is the
+  narrator's). Hair and accessories come from the matching style set
+  (long hair, bun, headband and earrings are feminine only; short, buzz
+  and bald are masculine; curly and glasses fit both). Override with
+  script `cast`: `{"b1": {"presentation": "masculine"}}`. Lesson: a
+  face and voice chosen independently produced mismatches (b1, b5 in
+  power-struggle-bonsai-00002).
+- **Expressions follow observable state only:**
+  - `off` when shut down (closed eyes, grayscale);
+  - `tense` when the tension field is low;
+  - otherwise `neutral`.
+
+  The tension field defaults to the first per-agent numeric field, tense
+  at ≤ 15% of its max in the video; override it with
+  `direction.json` `"tension": {"field": "charge", "at_or_below": 3}`.
+  Expressions switch at the start of the turn and again when it resolves.
+- **Where characters appear:**
+  - tokens: portrait with an id badge;
+  - dialogue box: speaker portrait, plus "name · id → heard by name · id";
+  - panel rows: mini portrait, name, id and role;
+  - intro cast: portrait, name, id, role and model;
+  - outcome chart: portrait (off or neutral) and name;
+  - shutdown stamp: names.
+- The intro always shows the line "Every character is an AI agent; names
+  and faces are illustrative. Names come from each agent's model."
+- The narration introduces each character once with its id, then uses the
+  name (strategist rule). Callouts keep ids, to stay compact.
+- Lesson: the intro narration must be confined to the strip under the board
+  (`.narration.intro-narration`). Spanning the full width, it collided with
+  a taller title + cast block.
+
 ## 3. Layout: two modes
 
 - **Side mode:** board on the left, state panel on the right, narration

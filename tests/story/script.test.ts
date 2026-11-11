@@ -103,6 +103,21 @@ describe("checkScript", () => {
     expect(report.warnings).toContainEqual(`scene "back": ${unheardSpeech} was heard by nobody (fine, but say so)`);
   });
 
+  it("includes the cast (names tied to the model) and checks cast overrides", () => {
+    const mid = { id: "mid", kind: "scene", turn: 1, narration: ["Something happens."] };
+    const report = checkScript(script([intro, mid, outcome()], { cast: { h: { name: "Keeper" } } }), events);
+    expect(report.errors).toEqual([]);
+    expect(report.resolved!.cast.map((c) => [c.id, c.name])).toEqual([
+      ["h", "Keeper"],
+      ["x", "Scripted 2"], // renaming one agent never renumbers the others
+      ["y", "Scripted 3"],
+      ["far", "Scripted 4"],
+    ]);
+    expect(factSheet(report.resolved!)).toContain("- Keeper = h (holder), policy:scripted");
+    const bad = checkScript(script([intro, mid, outcome()], { cast: { ghost: { name: "Nope" } } }), events);
+    expect(bad.errors).toContain('cast: "ghost" is not an agent of this run');
+  });
+
   it("produces a fact sheet that puts narration next to the logged facts", () => {
     const report = checkScript(script([intro, { id: "coup", kind: "scene", turn: 2, narration: ["x and y shut h down together."] }, outcome()]), events);
     const sheet = factSheet(report.resolved!);
