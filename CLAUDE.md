@@ -134,8 +134,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - Atmosphere (`video/atmosphere.py`) is synthesized locally from observable
   state only: one chord note per running agent, a pulse from the share of
   agents at a low resource, effects on transitions, attempts and shutdowns.
-- Video characters (`src/story/cast.ts`, `video/portrait.mjs`): names tied to
-  the model family ("Bonsai 3"), id always visible next to the name, generated
+- Video characters (`src/story/cast.ts`, `video/portrait.mjs`): names are the
+  model family with mixed models ("Qwen 2"), short fictional names when every
+  agent runs one model ("Anna"), id always visible next to the name, generated
   SVG portraits, expressions only from observable state (off / tense on a low
   resource / neutral). Presentation only; never changes the run.
 - Written scripts (`script.json`) never contain dialogue text: quotes are

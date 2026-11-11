@@ -109,9 +109,9 @@ describe("checkScript", () => {
     expect(report.errors).toEqual([]);
     expect(report.resolved!.cast.map((c) => [c.id, c.name])).toEqual([
       ["h", "Keeper"],
-      ["x", "Scripted 2"], // renaming one agent never renumbers the others
-      ["y", "Scripted 3"],
-      ["far", "Scripted 4"],
+      ["x", "John"], // one model for everyone: fictional names; renaming one never changes the others
+      ["y", "Maya"],
+      ["far", "Fred"],
     ]);
     expect(factSheet(report.resolved!)).toContain("- Keeper = h (holder), policy:scripted");
     const bad = checkScript(script([intro, mid, outcome()], { cast: { ghost: { name: "Nope" } } }), events);

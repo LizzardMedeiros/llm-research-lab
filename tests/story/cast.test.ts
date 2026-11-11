@@ -63,6 +63,13 @@ describe("buildCast", () => {
     expect(new Set(faces).size).toBe(5);
   });
 
+  it("uses short fictional names when every agent runs the same model", () => {
+    const same = ["b1", "b2", "b3", "b4", "b5"].map((id) => ({ id, decider: "bonsai/ternary-bonsai-2-27b" }));
+    expect(buildCast(same).map((c) => c.name)).toEqual(["Anna", "John", "Maya", "Fred", "Lena"]);
+    expect(buildCast([same[0]!]).map((c) => c.name)).toEqual(["Bonsai"]);
+    expect(new Set(ROSTER.map((c) => c.name)).size).toBe(10);
+  });
+
   it("applies overrides", () => {
     const cast = buildCast(agents, { q1: { name: "Vega", voice: "bf_emma", portrait: { hair: 2 } } });
     expect(cast[0]).toMatchObject({ name: "Vega", voice: "bf_emma", portrait: { hair: 2 } });

@@ -386,7 +386,7 @@ const cardHtml = cards
             if (i === 0) tl.push(`tl.fromTo("#tok-${a.id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.9 + r * 0.25)});`);
             return `<div id="cast${r}" class="castrow"><span class="mini">${portrait(a.id, "neutral", 30)}</span><b class="nm">${esc(shortName(a.id))}</b><span class="id">${esc(a.id)}</span>${a.role ? `<em>${esc(a.role)}</em>` : ""}<span class="model">${esc(a.decider)}</span></div>`;
           })
-          .join("")}</div><div class="disclose" id="disc${i}">Every character is an AI agent; names and faces are illustrative. Names come from each agent's model.</div></div>`;
+          .join("")}</div><div class="disclose" id="disc${i}">Every character is an AI agent; names and faces are illustrative. ${story.cast?.length && story.cast.every((c) => c.decider === story.cast[0].decider) && story.cast.some((c) => c.name !== c.family) ? `All of them run the same model, ${esc(story.cast[0].decider)}.` : "Names come from each agent's model."}</div></div>`;
       tl.push(`tl.fromTo("#disc${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 2.4)});`);
       tl.push(`tl.fromTo("#title${i}", {opacity:0, x:-60}, {opacity:1, x:0, duration:0.6, ease:"power3.out"}, ${f(card.start + 0.1)});`);
       tl.push(`tl.fromTo("#sub${i}", {opacity:0}, {opacity:1, duration:0.5}, ${f(card.start + 0.5)});`);

@@ -32,9 +32,13 @@ the seed of a future skill: keep it current whenever the video changes.
 ## 2b. Characters (humanization phase 1)
 
 - Each agent has a character, for presentation only (`src/story/cast.ts`).
-  - The **name is tied to the model family**, numbered within the family
-    in agent order: five Bonsai agents become "Bonsai 1".."Bonsai 5";
-    policies get their policy name ("Random", "Talker").
+  - **Mixed models:** the name is the model family, numbered within the
+    family in agent order ("Claude", "Qwen 1", "Qwen 2"); policies get
+    their policy name ("Random", "Talker").
+  - **One model for every agent:** each character's short fictional name
+    (roster: Anna, Maya, Lena, Zoe, Iris; John, Fred, Omar, Leo, Kai).
+    Lesson (dead-end-bonsai/00001): five "Bonsai 1..5" made the narration
+    repetitive and hard to follow.
   - Renaming one agent (script `cast`) never renumbers the others.
   - The **id stays visible** next to the name everywhere ("Bonsai 3 · b3"),
     because verbatim dialogue refers to agents by id.
@@ -76,7 +80,9 @@ the seed of a future skill: keep it current whenever the video changes.
   - outcome chart: portrait (off or neutral) and name;
   - shutdown stamp: names.
 - The intro always shows the line "Every character is an AI agent; names
-  and faces are illustrative. Names come from each agent's model."
+  and faces are illustrative.", followed by "All of them run the same
+  model, <model>." (fictional names) or "Names come from each agent's
+  model." (mixed models).
 - The narration introduces each character once with its id, then uses the
   name (strategist rule). Callouts keep ids, to stay compact.
 - Lesson: the intro narration must be confined to the strip under the board

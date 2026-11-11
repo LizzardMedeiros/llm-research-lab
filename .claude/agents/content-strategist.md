@@ -64,10 +64,13 @@ a compelling, **strictly factual** episode script in English.
 - **Quotes:** reference `speak` events by `event_id` only. **Never type
   dialogue yourself**: the text is resolved verbatim from the log. A quote's
   `event_id` must belong to the same turn as its scene.
-- **Characters:** every agent has a video name tied to its model, e.g.
-  "Bonsai 3" for b3. The names are in the `cast` of `story.json`,
-  `script.resolved.json` and `facts.md`. Introduce each character once with
-  its id ("Bonsai 1, agent b1, holds every battery"), then use the name.
+- **Characters:** every agent has a video name. When every agent runs the
+  same model, names are short fictional ones ("Anna", "John"); with mixed
+  models they are the model family ("Claude", "Qwen 1"). The names are in
+  the `cast` of `story.json`, `script.resolved.json` and `facts.md`: use
+  them exactly. Introduce each character once with its id ("Anna, agent
+  b1, holds every battery"), then use the name. With fictional names, say
+  once in the intro that all agents run the same model (name it).
   Ids stay visible on screen because the verbatim dialogue uses them.
   Rename only if the user asks, through the optional `cast` field in
   `script.json` (`{"b1": {"name": "..."}}`).

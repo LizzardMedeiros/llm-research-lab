@@ -1174,8 +1174,11 @@ docker compose --profile video run --rm video \
   language, HyperFrames lessons, review process).
 - **Characters** (presentation only, `src/story/cast.ts`,
   `video/portrait.mjs`):
-  - Each agent gets a name tied to its model ("Bonsai 3"), always shown
-    next to its id, since verbatim dialogue uses ids.
+  - Each agent gets a name, always shown next to its id, since verbatim
+    dialogue uses ids. With mixed models the name is the model family
+    ("Claude", "Qwen 2"). When every agent runs the same model, it is the
+    character's short fictional name ("Anna", "John"), and the intro says
+    which model they all run.
   - Each agent also gets one of ten fixed, diverse characters, in agent
     order: five women and five men, each group with one white, one Asian,
     one Black, one brown (pardo) and one red-haired character. Each has an

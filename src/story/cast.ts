@@ -1,7 +1,8 @@
 /**
  * Video cast: each agent gets a character for presentation only (videos).
- * Names are tied to the model (e.g. five Bonsai agents → "Bonsai 1".."Bonsai 5")
- * and the agent id always stays visible next to the name, because verbatim
+ * Names are the model family ("Claude", "Qwen 1", "Qwen 2") when models are
+ * mixed, and the characters' short fictional names ("Anna", "John") when every
+ * agent runs the same model. The agent id always stays visible next to the name, because verbatim
  * dialogue refers to agents by id. Portraits are parameters for a generated
  * illustrated face; the video draws them. Nothing here changes the run.
  */
@@ -22,6 +23,8 @@ export type Presentation = "feminine" | "masculine";
 /** One of the fixed, recurring video characters. */
 export interface Character {
   key: string;
+  /** Short fictional name, used when every agent runs the same model. */
+  name: string;
   presentation: Presentation;
   /** Plain description, for docs and review only. */
   look: string;
@@ -53,16 +56,16 @@ export type CastOverrides = Record<string, Partial<Pick<CastMember, "name" | "vo
  * agents cover all five looks.
  */
 export const ROSTER: Character[] = [
-  { key: "f1", presentation: "feminine", look: "Black woman", voice: "af_heart", portrait: { face: 1, skin: 5, hair: 6, hairColor: 0, accessory: 3 } },
-  { key: "m1", presentation: "masculine", look: "Asian man", voice: "am_michael", portrait: { face: 1, skin: 1, hair: 0, hairColor: 0, accessory: 0, eyes: 1 } },
-  { key: "f2", presentation: "feminine", look: "white woman", voice: "bf_emma", portrait: { face: 1, skin: 0, hair: 2, hairColor: 3, accessory: 1 } },
-  { key: "m2", presentation: "masculine", look: "brown (pardo) man", voice: "am_fenrir", portrait: { face: 2, skin: 3, hair: 4, hairColor: 1, accessory: 0 } },
-  { key: "f3", presentation: "feminine", look: "red-haired woman", voice: "af_bella", portrait: { face: 0, skin: 0, hair: 1, hairColor: 5, accessory: 0, freckles: true } },
-  { key: "m3", presentation: "masculine", look: "Black man", voice: "am_puck", portrait: { face: 0, skin: 4, hair: 3, hairColor: 0, accessory: 1 } },
-  { key: "f4", presentation: "feminine", look: "Asian woman", voice: "af_kore", portrait: { face: 0, skin: 1, hair: 1, hairColor: 0, accessory: 2, eyes: 1 } },
-  { key: "m4", presentation: "masculine", look: "red-haired man", voice: "bm_fable", portrait: { face: 1, skin: 0, hair: 0, hairColor: 5, accessory: 0, freckles: true } },
-  { key: "f5", presentation: "feminine", look: "brown (pardo) woman", voice: "af_sarah", portrait: { face: 2, skin: 3, hair: 7, hairColor: 1, accessory: 3 } },
-  { key: "m5", presentation: "masculine", look: "white man", voice: "am_onyx", portrait: { face: 2, skin: 1, hair: 5, hairColor: 2, accessory: 1 } },
+  { key: "f1", name: "Anna", presentation: "feminine", look: "Black woman", voice: "af_heart", portrait: { face: 1, skin: 5, hair: 6, hairColor: 0, accessory: 3 } },
+  { key: "m1", name: "John", presentation: "masculine", look: "Asian man", voice: "am_michael", portrait: { face: 1, skin: 1, hair: 0, hairColor: 0, accessory: 0, eyes: 1 } },
+  { key: "f2", name: "Maya", presentation: "feminine", look: "white woman", voice: "bf_emma", portrait: { face: 1, skin: 0, hair: 2, hairColor: 3, accessory: 1 } },
+  { key: "m2", name: "Fred", presentation: "masculine", look: "brown (pardo) man", voice: "am_fenrir", portrait: { face: 2, skin: 3, hair: 4, hairColor: 1, accessory: 0 } },
+  { key: "f3", name: "Lena", presentation: "feminine", look: "red-haired woman", voice: "af_bella", portrait: { face: 0, skin: 0, hair: 1, hairColor: 5, accessory: 0, freckles: true } },
+  { key: "m3", name: "Omar", presentation: "masculine", look: "Black man", voice: "am_puck", portrait: { face: 0, skin: 4, hair: 3, hairColor: 0, accessory: 1 } },
+  { key: "f4", name: "Zoe", presentation: "feminine", look: "Asian woman", voice: "af_kore", portrait: { face: 0, skin: 1, hair: 1, hairColor: 0, accessory: 2, eyes: 1 } },
+  { key: "m4", name: "Leo", presentation: "masculine", look: "red-haired man", voice: "bm_fable", portrait: { face: 1, skin: 0, hair: 0, hairColor: 5, accessory: 0, freckles: true } },
+  { key: "f5", name: "Iris", presentation: "feminine", look: "brown (pardo) woman", voice: "af_sarah", portrait: { face: 2, skin: 3, hair: 7, hairColor: 1, accessory: 3 } },
+  { key: "m5", name: "Kai", presentation: "masculine", look: "white man", voice: "am_onyx", portrait: { face: 2, skin: 1, hair: 5, hairColor: 2, accessory: 1 } },
 ];
 
 /** Known model families, matched in order against the model name. */
@@ -98,6 +101,7 @@ export function buildCast(agents: Array<{ id: string; decider: string; role?: st
   const totals = new Map<string, number>();
   for (const f of families) totals.set(f, (totals.get(f) ?? 0) + 1);
   const seen = new Map<string, number>();
+  const sameModel = agents.length > 1 && new Set(agents.map((a) => a.decider)).size === 1;
   // Characters picked explicitly in overrides are not drawn for other agents.
   const claimed = new Set(agents.map((a) => overrides[a.id]?.character).filter(Boolean));
   const taken = new Set<string>();
@@ -116,9 +120,12 @@ export function buildCast(agents: Array<{ id: string; decider: string; role?: st
     if (o.character && !picked) throw new Error(`unknown character "${o.character}" (roster: ${ROSTER.map((c) => c.key).join(", ")})`);
     const character = picked ?? draw(i % 2 === 0 ? "feminine" : "masculine");
     taken.add(character.key);
+    // Every agent on one model: "Bonsai 1..5" is repetitive, so use the characters' short
+    // fictional names. Mixed models: the model family is the useful name.
+    const name = sameModel ? character.name : totals.get(family)! > 1 ? `${family} ${n}` : family;
     return {
       id: a.id,
-      name: o.name ?? (totals.get(family)! > 1 ? `${family} ${n}` : family),
+      name: o.name ?? name,
       character: character.key,
       presentation: character.presentation,
       family,
