@@ -326,6 +326,22 @@ The rules below apply to every stage:
       narration has said what happened (DIRECTION.md §4).
     - Integrity: emphasis only on logged attempts. No invented build-up
       (no "aiming" on turns where no attempt was logged).
+  - **Implemented in the 3D episode (2026-11-12):**
+    `direction.json` `"props": {"taser": {"field", "action", "glossary"}}`
+    is data, with no scenario code; it needs `"world": "3d"`.
+    - On a hit, the card gets 1.8 s before the stamp: raise, pause, zap,
+      then the shutdown. The 3D camera takes over: a low angle (elevation
+      0.92 → 0.5), fitting actors and targets across the frame. The bolts
+      run at half speed at impact. The panel no longer resolves before
+      the strike, so it does not spoil it.
+    - Rejected attempts: the actor raises the taser and it sputters (LEDs
+      red), with no extra time. An actor with no charges holds no taser:
+      its attempt is only a gesture (turn 25, Anna).
+    - Simultaneous hits (turn 10: three) are staged at once, in one shot
+      framing both cells.
+    - Not yet: the music duck and a zap sound in the atmosphere track.
+      The turn-6 rejected attempt fizzles twice because turn 6 is split
+      into two scenes (s2/s3, the known callout issue).
   - **Decided (user, 2026-11-12): drawing the taser.** The rat holds it
     lowered whenever it has charges (observable state). It raises it only
     in the turn of a logged attempt, and the raise starts the beat. With

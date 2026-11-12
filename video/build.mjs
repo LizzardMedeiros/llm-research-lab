@@ -7,7 +7,9 @@
 // direction.json next to the input lets a director override, per scene id:
 //   { "scenes": { "<id>": { "panel": "auto"|true|false, "camera": "auto"|"wide"|["b1","b3"],
 //                            "pace": <extra seconds held, -0.5..4>, "transition": "wipe"|"cut" } },
-//     "world": "board"|"3d" }   ("3d": the board is drawn as a three.js set with robotic rats, world3d.js)
+//     "world": "board"|"3d",    ("3d": the board is drawn as a three.js set with robotic rats, world3d.js)
+//     "props": { "taser": { "field": "<per-agent charges stat>", "action": "<action name>", "glossary": "<text>" } } }
+//       (3d only: the item behind that action is shown as a taser, with a dramatic beat on each logged use)
 //
 // Output, next to the input: audio/*.wav, index.html, gsap.min.js, timeline.json, <name>.mp4
 // Dialogue on screen is verbatim from the run log. Narration is labeled.
@@ -36,6 +38,7 @@ const SPOKEN_LIMIT = 220; // longer quotes are shown in full but read up to a se
 const GAP = 0.35;
 const HOLD = 0.9;
 const WIPE = 0.9; // scene transition before the narration starts
+const SCENE_LIKE_KINDS = ["scene", "cold_open"];
 
 const args = process.argv.slice(2);
 const storyPath = args.find((a) => !a.startsWith("--"));
@@ -99,10 +102,19 @@ const DIRECTION_KEYS = new Set(["panel", "camera", "pace", "transition"]);
 if (direction.atmosphere !== undefined && direction.atmosphere !== false && (typeof direction.atmosphere !== "object" || Object.keys(direction.atmosphere).some((k) => !["music", "effects"].includes(k) || typeof direction.atmosphere[k] !== "number"))) {
   throw new Error('direction.json: atmosphere must be false or { "music": <level>, "effects": <level> } (1 = default)');
 }
-for (const key of Object.keys(direction)) if (!["scenes", "tension", "atmosphere", "world"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
+for (const key of Object.keys(direction)) if (!["scenes", "tension", "atmosphere", "world", "props"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
 if (direction.world !== undefined && !["board", "3d"].includes(direction.world)) throw new Error('direction.json: world must be "board" or "3d"');
 // "3d": the 2D board below still runs (hidden) as a puppet; world3d.js draws its state in 3D.
 const WORLD3D = direction.world === "3d";
+for (const key of Object.keys(direction.props ?? {})) if (key !== "taser") throw new Error(`direction.json: unknown prop "${key}"`);
+const TASER = direction.props?.taser;
+if (TASER && (!WORLD3D || typeof TASER.field !== "string" || typeof TASER.action !== "string" || (TASER.glossary !== undefined && typeof TASER.glossary !== "string"))) {
+  throw new Error('direction.json: props.taser needs "world": "3d" and { "field": "<stat>", "action": "<action>", "glossary"?: "<text>" }');
+}
+// A logged use of the taser's action gets a dramatic beat: push-in, raise, pause, zap, then the shutdown.
+const STRIKE_LEAD = 1.8;
+const isStrike = (b) => TASER && (b.kind === "action" || b.kind === "rejected") && b.action === TASER.action;
+const hasHit = (card) => SCENE_LIKE_KINDS.includes(card.kind) && (card.scene?.beats ?? []).some((b) => isStrike(b) && b.kind === "action");
 if (direction.tension !== undefined && (typeof direction.tension?.field !== "string" || typeof direction.tension?.at_or_below !== "number")) {
   throw new Error('direction.json: tension must be { "field": "<stat>", "at_or_below": <number> }');
 }
@@ -162,7 +174,7 @@ function tts(text, voiceId) {
 const cards = [];
 let t = 0;
 
-const SCENE_LIKE = new Set(["scene", "cold_open"]);
+const SCENE_LIKE = new Set(SCENE_LIKE_KINDS);
 
 function addCard(card, lines) {
   const start = t;
@@ -178,7 +190,8 @@ function addCard(card, lines) {
   // A shutdown plays after the scene's last speech: keep room for the stamp.
   // A shutdown stamp plays after the scene's speeches, or after its narration: keep room for it.
   const stampRoom = SCENE_LIKE.has(card.kind) && card.scene?.beats?.some((b) => b.kind === "shutdown") ? 2.2 : 0;
-  const duration = Math.max(cursor - start + HOLD + stampRoom + (card.direction.pace ?? 0), minimum);
+  const strikeRoom = hasHit(card) ? STRIKE_LEAD : 0;
+  const duration = Math.max(cursor - start + HOLD + stampRoom + strikeRoom + (card.direction.pace ?? 0), minimum);
   cards.push({ ...card, start, duration, clips, lead });
   t = start + duration;
 }
@@ -310,6 +323,8 @@ const callouts = []; // per-card callout elements (inside the camera; screen-spa
 const moves3d = Object.fromEntries(ids.map((id) => [id, []])); // [t0, duration, from u, v, to u, v] in cell units
 const lastCenter = {};
 const speeches3d = []; // [start, end, speaker, listeners] for every dialogue line
+const strikes3d = []; // [raise, zap, end, actor, target, hit] for every logged taser use
+const charges3d = Object.fromEntries(ids.map((id) => [id, []])); // [t, charges] steps
 const logMove = (id, c, at, duration) => {
   const from = lastCenter[id] ?? c;
   moves3d[id].push([Number(f(at)), duration, ...from.map((n) => Number(f(n / cell))), ...c.map((n) => Number(f(n / cell)))]);
@@ -424,9 +439,12 @@ const cardHtml = cards
       const speeches = card.clips.filter((c) => c.role === "speech");
       const shutdownBeats = card.scene.beats.filter((b) => b.kind === "shutdown");
       // The stamp never lands before the narration has said what happened (DIRECTION.md §4).
-      const stampAt = shutdownBeats.length ? (speeches.length ? Math.max(...speeches.map((c) => c.start + c.duration)) + 0.25 : Math.max(dramaAt, narrationEnd + 0.1)) : null;
+      let stampAt = shutdownBeats.length ? (speeches.length ? Math.max(...speeches.map((c) => c.start + c.duration)) + 0.25 : Math.max(dramaAt, narrationEnd + 0.1)) : null;
+      // A taser hit: the beat (raise, pause, zap) plays first, then the shutdown lands.
+      if (stampAt !== null && hasHit(card)) stampAt += STRIKE_LEAD;
       card.resolveAt = stampAt ?? Math.max(card.start + card.lead + 1, end - 1.1);
-      const panelResolveAt = Math.max(card.start + card.lead + 1.2, narrationEnd - 1);
+      // A taser hit must not be spoiled: the panel keeps the start of the turn until after the strike.
+      const panelResolveAt = hasHit(card) ? card.resolveAt : Math.max(card.start + card.lead + 1.2, narrationEnd - 1);
       if (panel) {
         html += statsPanel(card, i, prevStats, panelResolveAt);
         prevStats = card.scene.stats;
@@ -476,6 +494,11 @@ const cardHtml = cards
           callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(topIn)}px;width:${f(w - 16)}px">${esc(text)}</div>`);
         }
         const pop = card.start + card.lead + k * 0.25;
+        if (isStrike(b) && typeof b.args.target === "string") {
+          const zapAt = rejected ? pop + 0.45 : (card.resolveAt - 0.8);
+          const raiseAt = rejected ? pop : card.resolveAt - STRIKE_LEAD;
+          strikes3d.push([Number(f(raiseAt)), Number(f(zapAt)), Number(f(rejected ? zapAt + 0.3 : card.resolveAt + 0.1)), b.agent, b.args.target, !rejected]);
+        }
         // Hide after the turn resolves, but never before it has been readable (and never after the card).
         const hide = Math.min(end - 0.1, Math.max(pop + 1.5, Math.min(end - 0.4, card.resolveAt - 0.1)));
         if (!(hide > pop)) throw new Error(`callout ${id} (${text}) would hide at ${f(hide)} before it pops at ${f(pop)}`);
@@ -534,6 +557,7 @@ const cardHtml = cards
       const at = SCENE_LIKE.has(card.kind) ? card.start + 0.5 : card.start;
       tl.push(`tl.to("#tok-${id}", {x:${f(c[0] - TOKEN / 2)}, y:${f(c[1] - TOKEN / 2)}, opacity:${off ? 0.25 : 1}, duration:${i === 0 ? 0.01 : 0.9}, ease:"power2.inOut"}, ${f(at)});`);
       logMove(id, c, at, i === 0 ? 0.01 : 0.9);
+      if (TASER) charges3d[id].push([Number(f(card.start)), startView?.stats?.[id]?.[TASER.field] ?? 0]);
       setExpression(id, expressionOf(id, startView), at);
       // The first card of the video brings the tokens in (the intro does it when it opens the video).
       if (i === 0 && card.kind !== "intro") tl.push(`tl.fromTo("#tok-${id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.7 + r * 0.15)});`);
@@ -544,6 +568,7 @@ const cardHtml = cards
         logMove(id, e, card.resolveAt, 0.8);
       }
       if (SCENE_LIKE.has(card.kind) && expressionOf(id, card.scene) !== expressionOf(id, startView)) setExpression(id, expressionOf(id, card.scene), card.resolveAt);
+      if (TASER && SCENE_LIKE.has(card.kind)) charges3d[id].push([Number(f(card.resolveAt)), card.scene?.stats?.[id]?.[TASER.field] ?? 0]);
     });
 
     // Camera: wide at the start of the card (or on the director's / script's focus);
@@ -568,7 +593,14 @@ const cardHtml = cards
     if (SCENE_LIKE.has(card.kind) && (downs.length || movers.length) && closeUps) {
       tl.push(`tl.to("#camera", {...${JSON.stringify(frame([...downs, ...movers], card.resolveAt - 0.2))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - 0.2)});`);
     }
+    // Taser hit: push in on the actors and their targets as the taser is raised.
+    if (closeUps && hasHit(card)) {
+      const hits = card.scene.beats.filter((b) => isStrike(b) && b.kind === "action");
+      const pts = hits.flatMap((b) => [startCenters[b.agent], startCenters[b.args.target]]).filter(Boolean);
+      tl.push(`tl.to("#camera", {...${JSON.stringify(cameraOn(pts))}, duration:0.7, ease:"power2.inOut"}, ${f(card.resolveAt - STRIKE_LEAD - 0.2)});`);
+    }
     if (card.kind === "end") tl.push(`tl.to("#viewport", {opacity:0, duration:0.4}, ${f(card.start)});`);
+    if (card.kind === "end" && TASER?.glossary) tl.push(`tl.to("#gloss3d", {opacity:0, duration:0.4}, ${f(card.start)});`);
     if (!SCENE_LIKE.has(card.kind)) tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.2)});`);
 
     // Lines: narration and dialogue.
@@ -742,6 +774,7 @@ ${WORLD3D ? `  #gl { position:absolute; left:0; top:0; width:${W}px; height:${H}
   .w3d #camera { opacity:0; } /* the 2D puppet stays rendered (its SVG defs are shared with portraits) but invisible */
   .callout3d { position:absolute; left:0; top:0; z-index:3; }
   .tags3d { position:absolute; inset:0; z-index:1; pointer-events:none; }
+  .gloss3d { position:absolute; right:40px; bottom:34px; z-index:10; font-size:13px; color:#cfd6e4; background:#161d29e6; border:1px solid #263044; border-radius:8px; padding:4px 10px; opacity:0; }
   .tag3d { position:absolute; transform:translate(-50%, -100%); font-size:11px; font-weight:700; color:#fff; border-radius:6px; padding:1px 6px; white-space:nowrap; box-shadow:0 1px 4px #0008; opacity:0; }
 ` : ""}  .footer { position:absolute; left:40px; right:40px; bottom:14px; font-size:12px; color:#6b7385; z-index:10; }
 </style>
@@ -751,6 +784,7 @@ ${WORLD3D ? `  #gl { position:absolute; left:0; top:0; width:${W}px; height:${H}
   ${WORLD3D ? `<canvas id="gl" width="${W}" height="${H}"></canvas>` : ""}
   <div id="viewport"><div id="camera">${WORLD3D ? tokens : `${boardCells}${tokens}${callouts.join("")}`}</div></div>
   ${WORLD3D ? callouts.join("") : ""}
+  ${TASER?.glossary ? `<div class="gloss3d" id="gloss3d">${esc(TASER.glossary)}</div>` : ""}
   ${cardHtml}
   ${audio}
   <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">${esc(SERIES.name)} · ${esc(SERIES.project)} · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : story.narrator === "script" ? "scripted from logged facts, fact-checked" : `written by ${story.narrator} from logged facts`)}</div>
@@ -768,6 +802,7 @@ ${WORLD3D ? `<script>
   ${ids.map((id) => `tl.set("#tok-${id}", {scale:0, x:0, y:0}, 0);`).join("\n  ")}
   ${ids.map((id) => `tl.set("#ring-${id}", {opacity:0, scale:1}, 0);`).join("\n  ")}
   ${tl.join("\n  ")}
+  ${TASER?.glossary ? `tl.fromTo("#gloss3d", {opacity:0}, {opacity:1, duration:0.5}, ${f(cards.find((c) => SCENE_LIKE.has(c.kind) || c.kind === "intro")?.start + 1 || 1)});` : ""}
   window.__timelines = window.__timelines || {};
   window.__timelines["root"] = tl;
 </script>
@@ -779,6 +814,7 @@ ${WORLD3D ? `<script type="module">
     agents: ids.map((id) => ({ id, name: nameOf(id), color: color(id), feminine: member(id).presentation === "feminine" })),
     moves: moves3d,
     speeches: speeches3d,
+    ...(TASER ? { taser: { strikes: strikes3d, charges: charges3d, max: Math.max(1, statMax[TASER.field] ?? 1) } } : {}),
   })});
   // Draw from timeline time: bring the 2D puppet to t, then read it.
   const draw = (t) => { window.__timelines.root.seek(t); renderAt(t); };

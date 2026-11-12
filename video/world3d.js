@@ -139,6 +139,33 @@ export function poseRat(r, t, { walk = 0, talk = 0, off = 0, tense = 0, seed = 0
   u.tipMat.emissiveIntensity = 2 * alive;
 }
 
+/** Taser prop (presentation of a charged item): yellow body, grip, prongs, one LED per charge. */
+function makeTaser(maxCharges) {
+  const taser = new THREE.Group();
+  const yellow = new THREE.MeshStandardMaterial({ color: "#f5c518", roughness: 0.4 });
+  const black = new THREE.MeshStandardMaterial({ color: "#1d2330", roughness: 0.5, metalness: 0.4 });
+  const part = (geo, mat, pos, rotX = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(...pos); m.rotation.x = rotX; m.castShadow = true; taser.add(m); };
+  part(new THREE.BoxGeometry(0.07, 0.07, 0.2), yellow, [0, 0, 0.06]);
+  part(new THREE.BoxGeometry(0.06, 0.12, 0.06), black, [0, -0.06, -0.01], 0.25);
+  part(new THREE.BoxGeometry(0.08, 0.06, 0.03), black, [0, 0, 0.17]);
+  for (const s of [-1, 1]) part(new THREE.CylinderGeometry(0.006, 0.006, 0.04, 6), black, [0.022 * s, 0, 0.2], Math.PI / 2);
+  const leds = Array.from({ length: maxCharges }, (_, k) => {
+    const m = new THREE.MeshStandardMaterial({ color: "#000", emissive: "#3dff8f", emissiveIntensity: 2 });
+    const led = new THREE.Mesh(new THREE.SphereGeometry(0.012, 8, 6), m);
+    led.position.set((k - (maxCharges - 1) / 2) * 0.024, 0.04, 0.03);
+    taser.add(led);
+    return m;
+  });
+  const tip = new THREE.Object3D();
+  tip.position.set(0, 0, 0.23);
+  taser.add(tip);
+  taser.position.set(0.035, -0.24, 0.01);
+  taser.rotation.x = Math.PI / 2; // points out of the hand: down at rest, forward when the arm is raised
+  return { taser, leds, tip };
+}
+
+const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x - Math.floor(x); };
+
 /**
  * Mounts the 3D world on `canvas` and returns renderAt(t).
  * config: { W, H, view:{x,y,w,h}, cell, token, grid:{w,h,blocked:[[x,y]]},
@@ -223,6 +250,28 @@ export function mountWorld(canvas, config) {
     return { ...a, rat, ring, tag, seed: i * 1.7, el: document.getElementById(`tok-${a.id}`), tenseEl: document.getElementById(`face-${a.id}-tense`) };
   });
   const callouts = [...document.querySelectorAll(".callout3d")];
+
+  // Taser (optional prop): one per rat, shown while the log gives it charges.
+  const taserCfg = config.taser;
+  if (taserCfg) {
+    for (const a of agents) Object.assign(a, makeTaser(Math.min(4, taserCfg.max)));
+    for (const a of agents) a.rat.userData.arms[0].add(a.taser);
+  }
+  const chargesAt = (id, t) => {
+    let n = 0;
+    for (const [t0, v] of taserCfg?.charges[id] ?? []) if (t0 <= t) n = v;
+    return n;
+  };
+  const bolts = [];
+  const boltCore = new THREE.MeshBasicMaterial({ color: "#ffffff", transparent: true, blending: THREE.AdditiveBlending });
+  const boltGlow = new THREE.MeshBasicMaterial({ color: "#5fd0ff", transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending });
+  const sparks = Array.from({ length: 40 }, (_, i) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(0.008, 6, 4), new THREE.MeshBasicMaterial({ color: i % 3 ? "#fff6c8" : "#7fd8ff", transparent: true }));
+    m.visible = false;
+    scene.add(m);
+    return m;
+  });
+  const zapLights = [0, 1, 2].map(() => { const l = new THREE.PointLight("#7fd8ff", 0, 2.5); scene.add(l); return l; });
   const viewportEl = document.getElementById("viewport");
   const cameraEl = document.getElementById("camera");
   const get = (el, prop) => Number(window.gsap.getProperty(el, prop)) || 0;
@@ -249,8 +298,31 @@ export function mountWorld(canvas, config) {
     const closeness = 1.3 + (0.85 - 1.3) * centered;
     const dist = (closeness * H * worldPerPx) / (2 * Math.tan(fov / 2)) / (1 + 0.3 * (cs - 1));
     const az = 0.55 + 0.32 * Math.sin(t * 0.045) + 0.06 * Math.sin(t * 0.17); // decorative sway
-    const el = 0.92;
-    camera.position.set(target.x + dist * Math.sin(az) * Math.cos(el), target.y + dist * Math.sin(el), target.z + dist * Math.cos(az) * Math.cos(el));
+    let el = 0.92;
+    let camDist = dist;
+    // Taser hits take the camera: a low, tight shot on everyone involved, from the raise to just
+    // after the zap (positions come from the token proxies at that moment).
+    let shotW = 0;
+    const involved = [];
+    for (const [r0, , e0, actor, victim, hit] of taserCfg?.strikes ?? []) {
+      if (!hit) continue;
+      const w = ease((t - (r0 - 0.4)) / 0.6) * (1 - ease((t - (e0 + 0.9)) / 0.7));
+      if (w <= 0) continue;
+      shotW = Math.max(shotW, w);
+      for (const id of [actor, victim]) {
+        const el2 = document.getElementById(`tok-${id}`);
+        if (el2) involved.push(toWorld((get(el2, "x") + config.token / 2) / config.cell, (get(el2, "y") + config.token / 2) / config.cell));
+      }
+    }
+    if (shotW > 0 && involved.length) {
+      const c = involved.reduce((m, q) => m.add(q), new THREE.Vector3()).multiplyScalar(1 / involved.length);
+      // Fit the group across the frame width (16:9 with a 30° vertical fov: ~0.95 × distance wide).
+      const span = Math.max(...involved.map((q) => q.distanceTo(c))) * 2 + 0.6;
+      target.lerp(c.setY(0.4), shotW); // aim a little above the floor: the group sits in the middle of the frame
+      camDist = dist + (span * 1.35 - dist) * shotW;
+      el = 0.92 + (0.5 - 0.92) * shotW;
+    }
+    camera.position.set(target.x + camDist * Math.sin(az) * Math.cos(el), target.y + camDist * Math.sin(el), target.z + camDist * Math.cos(az) * Math.cos(el));
     camera.lookAt(target);
     camera.setViewOffset(W, H, W / 2 - screenX, H / 2 - screenY, W, H);
     camera.updateMatrixWorld();
@@ -324,9 +396,27 @@ export function mountWorld(canvas, config) {
       const off = clamp01((1 - Number(window.gsap.getProperty(a.el, "opacity"))) / 0.75);
       const tense = a.tenseEl ? clamp01(Number(window.gsap.getProperty(a.tenseEl, "opacity"))) : 0;
       a.rat.position.copy(pos);
-      a.rat.rotation.set(0, facing, (get(a.el, "rotation") * Math.PI) / 180);
+      // Taser beats: the actor turns to its target and raises the taser; the target turns to the actor.
+      let raise = 0, shake = 0;
+      for (const [r0, z0, e0, actor, target, hit] of taserCfg?.strikes ?? []) {
+        const w = ease((t - r0) / 0.3) * (1 - ease((t - e0 - 0.25) / 0.4));
+        if (w <= 0) continue;
+        const me = actor === a.id, them = target === a.id;
+        if (!me && !them) continue;
+        const other = placed.get(me ? target : actor)?.pos;
+        if (other && other.distanceTo(pos) > 0.01) facing = turnTo(facing, facingTo(pos, other), w);
+        if (me) raise = Math.max(raise, w);
+        if (them && hit && t >= z0 && t <= e0) shake = (hash(Math.floor(t * 30) + a.seed) - 0.5) * 0.3;
+      }
+      a.rat.rotation.set(0, facing, (get(a.el, "rotation") * Math.PI) / 180 + shake);
       a.rat.scale.setScalar(RAT_SCALE * Math.min(1, scale));
       poseRat(a.rat, t, { walk, talk, off, tense, seed: a.seed });
+      if (a.taser) {
+        const charges = chargesAt(a.id, t);
+        a.taser.visible = charges > 0; // no charges, no taser: an attempt without one is only a gesture
+        if (raise > 0) a.rat.userData.arms[0].rotation.set(-1.45 * raise - 0.1 * (1 - raise), 0.15 * raise, -0.12);
+        a.leds.forEach((m, k) => { m.emissiveIntensity = k < charges ? 2 : 0; m.emissive.set("#3dff8f"); });
+      }
       // The yellow ring marks who is speaking (listeners are named in the dialogue box).
       a.ring.position.copy(pos).setY(0.02);
       a.ring.material.opacity = speaking;
@@ -335,6 +425,65 @@ export function mountWorld(canvas, config) {
       a.tag.style.opacity = String(Math.min(1, scale) * (1 - off * 0.5));
       a.tag.style.left = `${sx}px`;
       a.tag.style.top = `${sy}px`;
+    }
+
+    // Taser effects: bolts on hits (slowed down at impact), a sputter on rejected attempts.
+    for (const m of bolts) { scene.remove(m); m.geometry.dispose(); }
+    bolts.length = 0;
+    zapLights.forEach((l) => (l.intensity = 0));
+    let spark = 0;
+    sparks.forEach((m) => (m.visible = false));
+    const tipPos = new THREE.Vector3();
+    for (const [, z0, e0, actor, target, hit] of taserCfg?.strikes ?? []) {
+      if (t < z0 || t > e0 + 0.6) continue;
+      const a = agents.find((x) => x.id === actor);
+      const goal = placed.get(target)?.pos;
+      if (!a?.tip || !placed.get(actor) || !goal) continue;
+      a.rat.updateMatrixWorld(true);
+      a.tip.getWorldPosition(tipPos);
+      const slow = z0 + (t - z0) * 0.5; // impact in slow motion (effects only; audio and log timing untouched)
+      const f = Math.floor(slow * 30);
+      if (hit && t <= e0) {
+        const chest = goal.clone().setY(0.21);
+        const bolt = (from, to, n, amp, seed) => {
+          const pts = [];
+          for (let i = 0; i <= n; i++) {
+            const q = from.clone().lerp(to, i / n);
+            if (i > 0 && i < n) q.add(new THREE.Vector3((hash(seed + i * 1.3) - 0.5) * amp * 0.5, (hash(seed * 7 + i) - 0.5) * amp, (hash(seed * 3 + i * 5) - 0.5) * amp));
+            pts.push(q);
+          }
+          const path = new THREE.CurvePath();
+          for (let i = 0; i < n; i++) path.add(new THREE.LineCurve3(pts[i], pts[i + 1]));
+          return { path, pts };
+        };
+        const addTube = (path, r, mat) => { const m = new THREE.Mesh(new THREE.TubeGeometry(path, 80, r, 5), mat); scene.add(m); bolts.push(m); };
+        const main = bolt(tipPos, chest, 14, 0.09, f * 17 + actor.length);
+        addTube(main.path, 0.0028, boltCore);
+        addTube(main.path, 0.01, boltGlow);
+        for (const k of [4, 9]) {
+          const from = main.pts[k];
+          const to = from.clone().add(new THREE.Vector3((hash(f + k) - 0.5) * 0.14, (hash(f * 2 + k) - 0.3) * 0.14, (hash(f * 3 + k) - 0.5) * 0.14));
+          addTube(bolt(from, to, 4, 0.03, f * 5 + k).path, 0.0018, boltCore);
+        }
+        boltCore.opacity = 0.75 + 0.25 * hash(f);
+        const light = zapLights.find((l) => l.intensity === 0);
+        if (light) { light.position.copy(chest); light.intensity = 2 + 1.5 * hash(f + 5); }
+      }
+      // Sparks: a burst at the target on a hit, a small sputter at the prongs on a rejected attempt.
+      if (!hit && chargesAt(actor, z0) === 0) continue; // nothing in hand: no sputter
+      const origin = hit ? goal.clone().setY(0.21) : tipPos.clone();
+      const count = hit ? 14 : 6;
+      const life = hit ? e0 - z0 + 0.6 : 0.4;
+      for (let i = 0; i < count && spark < sparks.length; i++, spark++) {
+        const age = ((slow - z0) + (i % 5) * 0.03) % 0.45;
+        if (t - z0 > life) break;
+        const m = sparks[spark];
+        const dir = new THREE.Vector3(hash(i * 3.1) - 0.5, hash(i * 5.7) * 0.8, hash(i * 9.3) - 0.5).normalize();
+        m.visible = true;
+        m.position.copy(origin).addScaledVector(dir, age * (hit ? 0.45 : 0.18)).add(new THREE.Vector3(0, -age * age * 0.8, 0));
+        m.material.opacity = 1 - age / 0.45;
+      }
+      if (!hit && a.leds && t <= e0) a.leds.forEach((m) => m.emissive.set("#ff5050"));
     }
 
     // Action callouts: above the actor's start-of-turn spot, stacked per cell.
