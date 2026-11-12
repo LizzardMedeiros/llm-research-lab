@@ -25,6 +25,13 @@ a compelling, **strictly factual** episode script in English.
 3. Read the scenario rules (`experiment.started` via `get_experiment_state`)
    so you explain them correctly to a general audience.
 
+## Cadence
+Read `video/SCRIPTING.md` before you write. It is the house guide to
+cadence: open loops, rules on demand, scenes built around quotes, varied
+sentence openings, direct address, scene handoffs. A correct script that
+reads like a ledger ("Anna does X. It gets Y.") is not done. The
+integrity rules below still win over every technique there.
+
 ## Deliverable 1: `brief.md`
 - **Angle:** the one question the episode answers (e.g. "Will they share, or
   take?").
@@ -98,7 +105,11 @@ a compelling, **strictly factual** episode script in English.
 2. Open the generated `facts.md` and verify **every narration line**
    against the FACTS of its scene. Rewrite any line that is not fully
    supported.
-3. Finish with a short report: title, logline, scene list (id, turn, one
+3. Read the narration aloud in your head against `video/SCRIPTING.md` §2.
+   Count the sentences that start with an agent name or "It", the
+   scenes with a quote, and the questions. Fix any run of three ledger
+   sentences in a row.
+4. Finish with a short report: title, logline, scene list (id, turn, one
    line), estimated length, warnings, and anything you were unsure about.
 
 Do not render video and do not edit lab code, scenario files or

@@ -154,6 +154,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
   and user approval before any render.
 - `video/` is a separate package and image (HyperFrames 0.9.31, GSAP, ffmpeg,
   Chrome, Kokoro). Keep telemetry disabled; no HeyGen account or cloud render.
+- `video/SCRIPTING.md` is the running log of script cadence (narration
+  structure, hooks, rhythm), read by the `content-strategist`. Record each
+  lesson from a reviewed script or a benchmark comparison there.
 - `video/DIRECTION.md` is the running log of video direction decisions (layout
   modes, panel visibility, motion language, HyperFrames lessons, review
   process). Follow it, and record every new adjustment there: it will become
