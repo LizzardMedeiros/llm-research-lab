@@ -23,7 +23,7 @@ const clamp01 = (x) => Math.min(1, Math.max(0, x));
 const ease = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
 
 /** A humanoid robotic lab rat built from primitives (facing +z). */
-function makeRat(hex, feminine) {
+export function makeRat(hex, feminine) {
   const color = new THREE.Color(hex);
   const root = new THREE.Group();
   const bodyMat = new THREE.MeshStandardMaterial({ color: color.clone(), roughness: 0.5, metalness: 0.1 });
@@ -112,7 +112,7 @@ function makeRat(hex, feminine) {
 }
 
 /** Pose for time t: idle breathing, walk (0..1), talk (0..1), power-down (0..1), tense (0..1). */
-function poseRat(r, t, { walk = 0, talk = 0, off = 0, tense = 0, seed = 0 }) {
+export function poseRat(r, t, { walk = 0, talk = 0, off = 0, tense = 0, seed = 0 }) {
   const u = r.userData;
   const ph = t * 7 + seed;
   const swing = walk * Math.sin(ph) * 0.55;

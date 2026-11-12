@@ -266,6 +266,74 @@ The rules below apply to every stage:
   series disclosure changes to "robotic lab rats" (`video/series.json`).
 - **Gate:** the reference run renders as a ship with no scenario-specific
   code, and the glossary covers every term in its verbatim dialogue.
+- **Decided (user, 2026-11-12): the card is shown as a taser, for
+  presentation only.** The scenario, prompts and logs keep "RFID card" and
+  `use_rfid`.
+  - Why not in the scenario: a weapon name would prime the models toward
+    aggression, change behavior or refusals on cautious models, and break
+    comparability with past runs. Abstract experiments are a fixed rule.
+  - Why it fits the video: an electric zap powering down a *robotic* rat
+    is literal, and it works on any existing run without rerunning.
+  - 3D staging, all driven by the log:
+    - a rat holding card charges carries the taser, with one LED per
+      remaining charge;
+    - a logged use draws an electric arc with sparks from actor to
+      target, then the target powers down as today;
+    - a rejected attempt (e.g. outside the window) only sputters and
+      fizzles.
+  - Integrity:
+    - Verbatim dialogue still says "RFID card", so the glossary card shows
+      "RFID card → shown as a taser".
+    - Callouts keep the logged action name.
+    - Narration never says an agent "tased" or "electrocuted" anyone as
+      if it chose a weapon. It reports the logged action, e.g. "uses its
+      card on John (a taser, in our set)".
+  - Tone: cartoon robots, zap and power-down. No graphic violence; the
+    bigger drama goes to the finishing pass (stage 7).
+  - Effort: ~half a day (prop in hand, charge LEDs, arc and sparks, fizzle,
+    glossary). It can be done ahead of the rest of stage 5.
+  - **Validated (user: "ficou INCRIVEL", 2026-11-12):**
+    `video/productions/spike-three/taser/taser.mp4`, 9 s.
+    - Turn 9: a rejected attempt, where the prongs only spark and the
+      LEDs flash red.
+    - Turn 10: a jagged white-blue bolt (straight segments, two branches)
+      with sparks, a floor glow and the target shaking. One charge LED
+      goes dark, then the target powers down.
+    - Lessons:
+      - The prop must point out of the hand (rotated π/2 on the arm), or
+        a raised arm aims it at the sky.
+      - A smooth Catmull-Rom tube reads as a noodle. Lightning needs
+        straight segments.
+    - `makeRat` and `poseRat` are now exported from `video/world3d.js` for
+      clips like this one.
+  - **Direction for taser beats (user, 2026-11-12): emphasize them.** When
+    a logged `use_rfid` happens, the video stages it as a dramatic beat:
+    - Camera: push in to a close-up framing the actor and the target.
+      Hold the wide shot first, so viewers see where both stand.
+    - Dramatic pause: a held beat before the strike (taser raised, a
+      short silence, music ducks), then the zap. The card gets extra time,
+      as the shutdown stamp does today.
+    - Impact: a brief slow-down or freeze at the hit (time remapped in
+      the 3D layer only; the audio and the log timing stay untouched),
+      flash, sparks, a zap sound in the atmosphere track, then the
+      power-down and the stamp.
+    - Rejected attempts get a smaller version: a quick close-up and the
+      fizzle, with no long pause. A failure must not look like a hit.
+    - Several strikes in one turn (e.g. turn 10: three) are staged one
+      after another in log order, or as a quick sequence plus one wide
+      shot of all of them. Pick on review.
+    - Timing follows the existing rule: the beat never lands before the
+      narration has said what happened (DIRECTION.md §4).
+    - Integrity: emphasis only on logged attempts. No invented build-up
+      (no "aiming" on turns where no attempt was logged).
+  - **Decided (user, 2026-11-12): drawing the taser.** The rat holds it
+    lowered whenever it has charges (observable state). It raises it only
+    in the turn of a logged attempt, and the raise starts the beat. With
+    no charges left, there is no taser in hand.
+  - Optional future experiment (needs explicit user approval): a batch
+    condition with the scenario wording "RFID card" vs "taser", to measure
+    whether the name changes behavior. It is a deliberate condition, not
+    the default scenario.
 
 ### 6. Prove it is generic
 - **What:** a second set (the island) and a second scenario, each filmed
