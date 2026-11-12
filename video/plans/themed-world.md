@@ -163,6 +163,14 @@ The rules below apply to every stage:
 - **Gate:** the reference run is at least as easy to follow as on the 2D
   board, judged on review sheets of a dialogue scene, a shutdown and the
   outcome.
+- Notes from the spike with rats on the board (`spike-three/c.mp4`,
+  2026-11-12):
+  - Idle rats should face the camera by default (three-quarter view),
+    unless they are walking. With fixed rotations, several showed their
+    backs and hid their faces.
+  - In the wide shot, color, bow and power-down read, but faces only read
+    in close-up. Keep the current grammar: wide for positions, close-up
+    for speech and shutdowns.
 
 ### 2. Motion and sound baseline
 - **What:** DIRECTION.md §8 benchmark items #1 and #2:
@@ -228,8 +236,23 @@ The rules below apply to every stage:
 
 ## Open questions (debate before the stage that needs them)
 
-- **Stage 1:** isometric fixed angle or free 3D camera? Fixed is more
-  readable; orbiting is livelier.
+- ~~**Stage 1:** isometric fixed angle or free 3D camera?~~ **Decided
+  (user, 2026-11-12): free 3D.**
+  - Free → fixed is the cheap direction. Isometric is just a constrained
+    camera, so we can lock it later with a parameter.
+  - Fixed → free is expensive. Fixed angles allow cheats (unfinished
+    backs, sprites, scenery cut where it is never seen) that all break
+    once the camera turns.
+  - Camera shots are data (named presets such as wide orbit, close-up,
+    fixed iso), so the choice stays a setting.
+  - Free 3D costs: walls can hide rats, so the camera needs occlusion
+    rules (avoid the angle, or fade the wall). Every piece must look
+    right from every side.
+  - Occlusion is decided after tests (user). Stage 1 starts with the free
+    camera and measures how often rats are hidden on the reference run.
+    Then we pick: occlusion strategies (transparent or faded walls, a
+    highlighted silhouette through walls, angle avoidance) or a fixed
+    camera.
 - **Stage 5:** do rooms carry meaning (e.g. where items spawn), or are
   they purely decorative?
 - **Stage 5:** does the narrator use set terms only ("canister"), or both
