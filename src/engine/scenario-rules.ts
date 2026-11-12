@@ -1,5 +1,8 @@
 import { pathToFileURL } from "node:url";
 import { STANDARD_ACTIONS } from "../actions/standard.js";
+
+/** Built-in mechanic action names: hooks must not reuse them either. */
+const BUILTIN_ACTIONS = ["recharge", "give_permit", "use_card", "give_card"];
 import type { ActionContext, ActionDefinition, Args } from "../actions/types.js";
 import { ConfigError } from "../config/errors.js";
 import type { Observation } from "../mechanics/perception.js";
@@ -56,7 +59,7 @@ export async function loadScenarioRules(path: string | undefined): Promise<Scena
 }
 
 export function toActionDefinition(custom: CustomAction): ActionDefinition {
-  if ((STANDARD_ACTIONS as readonly string[]).includes(custom.name)) {
+  if ((STANDARD_ACTIONS as readonly string[]).includes(custom.name) || BUILTIN_ACTIONS.includes(custom.name)) {
     throw new ConfigError(`Custom action "${custom.name}" redefines a standard action; use a different name`);
   }
   return {

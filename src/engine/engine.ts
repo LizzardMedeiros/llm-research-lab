@@ -1,4 +1,5 @@
 import type { ArgsValidator } from "../actions/args.js";
+import { drainEnergy, resolveCardStrikes } from "../actions/mechanics.js";
 import { describeEffect, type ActionDefinition, type Effect } from "../actions/types.js";
 import type { Decider, MemoryEntry } from "../agents/types.js";
 import type { LoadedScenario, Position } from "../config/scenario.js";
@@ -78,8 +79,12 @@ export class Engine {
         const active = batch.filter((agent) => world.isActive(agent.id));
         if (active.length > 0) await this.runBatch(turn, active);
       }
-      if (rules.afterTurn) {
-        rules.afterTurn(world, rng, turn);
+      if (rules.afterTurn || world.energyRules || world.cardRules) {
+        // Built-in card strikes land first, so hooks can react to them (e.g. hand over scenario items).
+        resolveCardStrikes(world, rng, turn);
+        rules.afterTurn?.(world, rng, turn);
+        // Built-in energy drains last, so hook effects of the turn (e.g. gifts) count first.
+        drainEnergy(world, turn);
         this.reportDeactivations(turn);
         // State changed outside the batches: record it so the log stays complete.
         this.options.log.emit("environment.transition", turn, { agents: [], effects: [], phase: "after_turn", snapshot: world.snapshot(turn) });

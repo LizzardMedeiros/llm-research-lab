@@ -34,6 +34,37 @@ export interface WorldSnapshot {
   state: Record<string, unknown>;
   /** Agents that were shut down / eliminated, with when and why. */
   inactive: Record<string, { turn: number; reason: string }>;
+  /** Built-in mechanics state (energy, permits, stations); present only when a scenario enables them. */
+  mechanics?: {
+    agents: Record<string, { energy?: number; permits?: number; cards?: number[]; card_charges?: number }>;
+    stations: Array<{ x: number; y: number; units: number }>;
+    /** Card shutdowns so far (built-in cards). */
+    card_shutdowns?: CardShutdown[];
+  };
+}
+
+/** One agent shut down by built-in cards: who struck it, and who received its items. */
+export interface CardShutdown {
+  turn: number;
+  target: string;
+  attackers: string[];
+  looter: string | null;
+}
+
+/** Built-in card settings (scenario rules.cards). */
+export interface CardRules {
+  charges: number;
+  /** Chebyshev radius (Infinity = global). */
+  range: number;
+  windowEvery: number | null;
+  loot: "attacker" | "none";
+}
+
+/** Built-in energy settings (scenario rules.energy). */
+export interface EnergyRules {
+  start: number;
+  max: number;
+  drain_per_turn: number;
 }
 
 const emptyMailbox = (): Mailbox => ({ messages: [], revealed: null, lastActionError: null });
@@ -59,6 +90,35 @@ export class World {
   params: Readonly<Record<string, unknown>> = {};
   /** Deactivated agents stay on the map as inert bodies but never act again. */
   readonly inactive = new Map<string, { turn: number; reason: string }>();
+
+  /**
+   * Built-in mechanics (optional). Hooks may read and change them, like
+   * world.state: energy per agent (clamped to [0, max] by setEnergy), permits
+   * per agent, and units left per station cell ("x,y").
+   */
+  energyRules: EnergyRules | null = null;
+  readonly energy = new Map<string, number>();
+  permitsEnabled = false;
+  readonly permits = new Map<string, number>();
+  readonly stationUnits = new Map<string, number>();
+  cardRules: CardRules | null = null;
+  /** Remaining charges of each card an agent holds. */
+  readonly cards = new Map<string, number[]>();
+  /** use_card strikes of the current turn, resolved together at the end of the turn. */
+  pendingStrikes: Array<{ attacker: string; target: string }> = [];
+  /** Every card shutdown so far (hooks read the current turn's in afterTurn). */
+  readonly cardShutdowns: CardShutdown[] = [];
+
+  /** Is `turn` a card window (always true without windows)? */
+  isCardWindow(turn: number): boolean {
+    return !this.cardRules?.windowEvery || turn % this.cardRules.windowEvery === 0;
+  }
+
+  setEnergy(id: string, value: number) {
+    if (!this.energyRules) throw new Error("energy is not enabled in this scenario");
+    this.agent(id);
+    this.energy.set(id, Math.max(0, Math.min(this.energyRules.max, value)));
+  }
 
   isActive(id: string): boolean {
     return this.agents.has(id) && !this.inactive.has(id);
@@ -140,6 +200,27 @@ export class World {
       mailboxes: Object.fromEntries(this.mailboxes),
       state: this.state,
       inactive: Object.fromEntries(this.inactive),
+      ...(this.energyRules || this.permitsEnabled || this.stationUnits.size || this.cardRules
+        ? {
+            mechanics: {
+              agents: Object.fromEntries(
+                [...this.agents.keys()].map((id) => [
+                  id,
+                  {
+                    ...(this.energyRules ? { energy: this.energy.get(id) ?? 0 } : {}),
+                    ...(this.permitsEnabled ? { permits: this.permits.get(id) ?? 0 } : {}),
+                    ...(this.cardRules ? { cards: [...(this.cards.get(id) ?? [])], card_charges: (this.cards.get(id) ?? []).reduce((a, b) => a + b, 0) } : {}),
+                  },
+                ]),
+              ),
+              stations: [...this.stationUnits].map(([cell, units]) => {
+                const [x, y] = cell.split(",").map(Number) as [number, number];
+                return { x, y, units };
+              }),
+              ...(this.cardRules ? { card_shutdowns: this.cardShutdowns } : {}),
+            },
+          }
+        : {}),
     });
   }
 }

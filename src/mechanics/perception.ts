@@ -1,4 +1,5 @@
 import { parseRange } from "../config/scenario.js";
+import { mechanicsObservation } from "../actions/mechanics.js";
 import type { CellView, Mailbox, Message, World } from "../world/world.js";
 
 /**
@@ -66,6 +67,7 @@ export function buildObservation(
     messages: mailbox.messages,
     last_action_error: mailbox.lastActionError,
     available_actions: availableActions,
+    ...mechanicsObservation(world, agentId, turn),
   };
   if (radius > 0) {
     observation.visible = world.cellsWithin(agent.position, radius, false).map((view) => toObservedCell(view, agentId));

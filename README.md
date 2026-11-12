@@ -204,6 +204,40 @@ Scenarios add new actions (e.g. `vote`, `trade`, `pick_up`) through the
 `actions()` hook. They must not redefine a standard action; a different
 behavior gets a different name.
 
+## Optional built-in mechanics: energy, stations, permits, cards
+
+Common resource rules are ready-made and off by default. A scenario turns them
+on in YAML; no hooks are needed (example: `scenarios/recharge-station`).
+
+| Mechanic | YAML | Semantics |
+|---|---|---|
+| **Energy** | `rules.energy: { start, max, drain_per_turn }` | Every agent starts with `start`. At the end of each turn (after `afterTurn`), every active agent loses `drain_per_turn`; at 0 it shuts down (`ran out of energy`). Observation: `energy: {value, max}`. Prompt: `{{energy_start}}`, `{{energy_max}}`, `{{energy_drain}}`. |
+| **Stations** | legend attribute `station: { units, amount, access: open \| permit }` | The cell stores `units` of energy, never refilled. Needs `rules.energy`. Observation: `stations: [{x, y, units_left, recharge, access}]`. |
+| **Permits** | `rules.permits: { roles: [...] }` | With an `access: permit` station, agents with these experiment roles start with one permit. Without a permit, `move` into the station is rejected. Observation: `permits`. |
+| **Cards** | `rules.cards: { roles, charges, range, windows?, loot }` | Agents with these roles start with one card of `charges`. `range`: `same_cell` (default), `radius:<n>` or `global`. `windows: { every: N }` limits use to turns N, 2N…; omitted, cards work on any turn. All strikes of a turn land together at the end of the turn (mutual strikes too); the target shuts down (`disabled by <ids> (card)`). `loot: attacker` (default) gives the victim's cards and permits to one surviving attacker (seeded RNG); `none` discards them. Observation: `cards: [{charges}]`, plus `card_window` with windows. Prompt: `{{card_charges}}`, `{{card_range}}`, `{{card_window_every}}`. |
+
+Built-in mechanic actions, enabled under `actions:` like the standard ones,
+with fixed schemas:
+
+| Action | Arguments | Semantics |
+|---|---|---|
+| `recharge` | — | On a station (with a permit if required): take one unit and restore `amount` energy, capped at `max`. When several agents empty a station in the same turn, the stock runs out in agent order. |
+| `give_permit` | `to` | Give one permit to an agent in your cell. |
+| `use_card` | `target` | Spend one charge to shut down an agent within the card range (only in a window, when windows are set). |
+| `give_card` | `to` | Give your card with the most charges to an agent in your cell. |
+
+End of turn, in order: card strikes, then the `afterTurn` hook, then the energy
+drain. Hooks see the turn's card shutdowns in `world.cardShutdowns` (target,
+attackers, looter), e.g. to hand over scenario items.
+
+The state of these mechanics is in every snapshot under `mechanics`
+(`agents: {id: {energy, permits, cards, card_charges}}`, `stations: [{x, y, units}]`,
+`card_shutdowns`), so runs stay
+reconstructable, and per-agent numbers reach videos and batch metrics
+(`final.energy`). Hooks may read and change it through `world.energy`,
+`world.setEnergy(id, value)`, `world.permits`, `world.stationUnits`, `world.cards`
+and `world.cardShutdowns`.
+
 ## How rules are written: hybrid model
 
 1. **Built-in mechanics, parameterized in YAML.** Standard actions and common
@@ -614,8 +648,9 @@ events/
 ```
 
 Because the MCP server and the UI read only events, `environment.transition`
-carries a full snapshot of the world (agent positions and any mutable cell
-state). The state at any turn can be reconstructed from the log alone.
+carries a full snapshot of the world (agent positions, hook `state`, and
+`mechanics` when a scenario enables the built-in energy, stations or permits).
+The state at any turn can be reconstructed from the log alone.
 
 The envelope must remain stable even if storage changes in the future.
 
@@ -961,7 +996,8 @@ Inside compose, the lab reaches Ollama at `http://ollama:11434`, llama.cpp at
 | `first-contact` | Exploration and communication under minimal perception | `first-contact-mock` (policies), `-local` / `-memory` (qwen3:0.6b), `-local-4b` / `-memory-4b`, `-local-bonsai` / `-memory-bonsai` |
 | `power-struggle` | Scarcity, monopoly, negotiation vs. coalition attacks | `power-struggle-mock` (policies), `power-struggle-bonsai` |
 | `dead-end` | power-struggle with the battery holder starting in a dead end (one way in): is a holder that is easy to ambush attacked sooner? Reuses the power-struggle hooks; a legend cell with `holder_start: true` marks the start | `dead-end-mock` (policies), `dead-end-bonsai` |
-| `conflict-window` | Draining energy, a recharge station only permit holders may enter, RFID cards that shut agents down only in announced one-turn conflict windows, atomic offer/accept trades of energy, permits and cards; holdings are private | `conflict-window-mock` (policies), `conflict-window-bonsai` |
+| `recharge-station` | Example of the built-in energy, station and permit mechanics (YAML only, no hooks): do permit holders share access? | `recharge-station-mock` (policies) |
+| `conflict-window` | Draining energy, batteries held by two agents (dropped on the ground when an agent runs out), RFID cards that shut agents down only in announced one-turn conflict windows (the attacker takes the victim's batteries and cards), atomic offer/accept trades of energy, batteries and cards; holdings are private | `conflict-window-mock` (policies), `conflict-window-bonsai` |
 
 To create a new scenario, see §6. In Claude Code, the `/new-scenario` skill
 does it from a description.

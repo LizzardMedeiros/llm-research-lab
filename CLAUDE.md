@@ -63,7 +63,13 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - stable event envelope persisted as JSONL;
   - single `ModelProvider` interface;
   - all environment randomness comes from the seeded RNG — never `Math.random()`;
-  - rules are frozen per run and recorded in `experiment.started`.
+  - rules are frozen per run and recorded in `experiment.started`;
+  - optional built-in mechanics, off unless a scenario enables them in YAML
+    (`src/actions/mechanics.ts`, README §4): energy (`rules.energy`),
+    stations (legend `station`), permits (`rules.permits`), cards
+    (`rules.cards`: charges, range, optional windows, loot) and their actions
+    `recharge`, `give_permit`, `use_card` and `give_card`. Their state lives in
+    the world (not in `world.state`) and is snapshotted under `mechanics`.
 - Everything else (map, perception, which actions are enabled and their
   parameters, new actions, occupancy, scheduling, memory window, end
   conditions, prompts) is a **scenario rule**.

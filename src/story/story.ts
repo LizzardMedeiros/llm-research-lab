@@ -66,6 +66,8 @@ type Snapshot = {
   agents: Record<string, { position: [number, number] | { x: number; y: number } }>;
   inactive?: Record<string, unknown>;
   state?: Record<string, unknown>;
+  /** Built-in mechanics (energy, permits); per-agent numbers count as stats like hook state. */
+  mechanics?: { agents: Record<string, Record<string, number>> };
 };
 
 const toXY = (p: [number, number] | { x: number; y: number }): [number, number] => (Array.isArray(p) ? p : [p.x, p.y]);
@@ -91,7 +93,7 @@ function viewOf(snapshot: Snapshot, ids: string[]): WorldView {
   return {
     positions: Object.fromEntries(Object.entries(snapshot.agents).map(([id, a]) => [id, toXY(a.position)])),
     inactive: Object.keys(snapshot.inactive ?? {}),
-    stats: perAgentStats(snapshot.state, ids),
+    stats: perAgentStats({ ...snapshot.state, ...(snapshot.mechanics ? { __mechanics: snapshot.mechanics.agents } : {}) }, ids),
   };
 }
 
@@ -248,7 +250,7 @@ export function runOutcome(index: RunIndex): Story["outcome"] {
     ? outcomeState ??
       (survivors.length ? `Still running at turn ${index.lastTurn}: ${survivors.join(", ")}.` : `By turn ${index.lastTurn}, every agent had shut down.`)
     : `The run was stopped at turn ${index.lastTurn}. Still running: ${survivors.join(", ") || "nobody"}.`;
-  return { turn: index.lastTurn, text, survivors, stats: perAgentStats(final.state, index.ids) };
+  return { turn: index.lastTurn, text, survivors, stats: perAgentStats({ ...final.state, ...(final.mechanics ? { __mechanics: final.mechanics.agents } : {}) }, index.ids) };
 }
 
 export function buildStory(events: LabEvent[], options: StoryOptions = {}): Story {

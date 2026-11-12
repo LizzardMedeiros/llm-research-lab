@@ -1,0 +1,22 @@
+# Smoke test for the built-in energy/station mechanics. No API calls.
+scenario: ../scenarios/recharge-station/scenario.yaml
+seed: 3
+
+agents:
+  - id: k1
+    provider: policy
+    role: keyholder                  # starts with a permit
+    policy: random
+    params: { actions: [move, recharge, give_permit] }
+  - id: k2
+    provider: policy
+    role: keyholder
+    policy: random
+    params: { actions: [move, recharge] }
+  - id: a1
+    provider: policy
+    policy: random
+    params: { actions: [move, recharge, give_permit] }
+  - id: a2
+    provider: policy
+    policy: random

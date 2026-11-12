@@ -1,5 +1,6 @@
 import { parseRange, type ScenarioConfig } from "../config/scenario.js";
 import { distance, type Position } from "../world/world.js";
+import { entryRefusal } from "./mechanics.js";
 import type { ActionDefinition } from "./types.js";
 
 /**
@@ -45,7 +46,7 @@ export function createMove(params: NonNullable<ActionsConfig["move"]>): ActionDe
       const target: Position = [agent.position[0] + dx, agent.position[1] + dy];
       if (!world.inBounds(target)) return `cannot move ${direction}: outside the grid`;
       if (world.cellAt(target)!.blocksMovement) return `cannot move ${direction}: ${world.cellAt(target)!.type} blocks movement`;
-      return null;
+      return entryRefusal(world, agent.id, target);
     },
     effect(args, { agent }) {
       const [dx, dy] = OFFSETS[args["direction"] as string]!;

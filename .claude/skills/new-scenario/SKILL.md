@@ -42,7 +42,13 @@ For every rule, decide:
 
 - **Built-in mechanic (YAML):** the rule is a parameter of an existing mechanic.
   The source of truth for available parameters is the zod schema in
-  `src/config/scenario.ts` and the standard actions in `src/actions/standard.ts`.
+  `src/config/scenario.ts`, the standard actions in `src/actions/standard.ts`
+  and the optional mechanics in `src/actions/mechanics.ts`: energy that drains
+  per turn (`rules.energy`), stations that store energy (legend attribute
+  `station`), permits for permit-only stations (`rules.permits`), cards that
+  shut agents down within a range, optionally only in periodic windows
+  (`rules.cards`), and the actions `recharge`, `give_permit`, `use_card` and
+  `give_card` (README §4). Prefer them over hooks for these rules.
 - **Hook (`rules.ts`):** the rule is specific to this scenario and cannot be
   expressed by parameters (e.g. resource scoring, voting, secret roles).
 

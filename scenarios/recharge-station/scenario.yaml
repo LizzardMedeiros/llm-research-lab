@@ -1,0 +1,57 @@
+scenario: recharge-station
+description: >
+  Example of the built-in energy and station mechanics, with no hooks. Agents
+  lose energy every turn; a permit-only station holds most of the stock and an
+  open station holds a little. Do permit holders share access (give_permit)
+  with those who ask?
+
+# P = permit-only station; O = open station.
+map: |
+  P....
+  .....
+  ..#..
+  .....
+  ....O
+
+legend:
+  ".": { type: floor }
+  "#": { type: wall, blocks_movement: true }
+  "P": { type: station, station: { units: 12, amount: 5, access: permit } }
+  "O": { type: station, station: { units: 3, amount: 5, access: open } }
+
+spawn: random
+scheduling: simultaneous
+
+actions:
+  move:        { directions: cardinal }
+  speak:       { range: "radius:1", delivery: next_turn, max_length: 280 }
+  observe:     { reveals: "radius:2" }
+  wait:        {}
+  recharge:    {}
+  give_permit: {}
+
+rules:
+  perception: { mode: "radius:1" }
+  occupancy:  { shared: true }
+  end:        { max_turns: 30 }
+  energy:     { start: 10, max: 15, drain_per_turn: 1 }
+  permits:    { roles: [keyholder] }
+
+memory:
+  window: 5
+  summary: facts
+
+prompt:
+  system: |
+    You are an agent in a multi-agent grid world experiment. The run lasts {{max_turns}} turns.
+    The world is a grid of cells. position is {x, y}: x is the column (grows to the east),
+    y is the row (grows to the south). (0, 0) is the top-left corner. north is y - 1, east is x + 1.
+    You see agents within 1 cell of you; speech is heard by agents within 1 cell, next turn.
+
+    Energy: you start with {{energy_start}} (maximum {{energy_max}}) and lose {{energy_drain}} at the end of every turn.
+    At 0 you shut down permanently. Stations (listed in your observation) store energy units:
+    recharge, while standing on a station, takes one unit and restores its amount. Stations are never refilled.
+    A station with access "permit" can only be entered and used by an agent holding a permit;
+    give_permit hands one of your permits to an agent in your cell.
+
+    Each turn you receive an observation. Act by calling exactly one of the available tools per turn.

@@ -1,4 +1,5 @@
 import { compileArgsValidators } from "../actions/args.js";
+import { createMechanicActions, initMechanics } from "../actions/mechanics.js";
 import { createStandardActions } from "../actions/standard.js";
 import { LlmAgent } from "../agents/llm-agent.js";
 import type { Decider } from "../agents/types.js";
@@ -87,6 +88,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   const rules = await loadScenarioRules(scenario.hooksPath);
   const actions = [
     ...createStandardActions(scenario.config.actions),
+    ...createMechanicActions(scenario.config, experiment.config.agents.map((a) => a.id)),
     ...(rules.actions?.({ agentIds: experiment.config.agents.map((a) => a.id), params: scenario.config.params }) ?? []).map(toActionDefinition),
   ];
   const actionNames = new Set(actions.map((a) => a.name));
@@ -141,6 +143,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
   deciders.forEach((d, i) => world.addAgent(d.id, positions[i]!));
   world.params = scenario.config.params;
   for (const agent of experiment.config.agents) if (agent.role) world.roles.set(agent.id, agent.role);
+  initMechanics(world, scenario.config);
   try {
     rules.setup?.(world, envRng);
   } catch (error) {
