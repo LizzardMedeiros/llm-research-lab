@@ -1,16 +1,16 @@
 /**
- * conflict-window: draining energy, one gated recharge station, RFID cards that
- * only work during announced one-turn conflict windows, and atomic trades.
+ * conflict-window: draining energy, batteries held by a few agents, RFID cards
+ * that only work during announced one-turn conflict windows, and atomic trades.
  * All numbers come from scenario.yaml `params` (also shown in the prompt).
  */
 import type { CustomAction, ScenarioRules } from "../../src/engine/scenario-rules.js";
 import type { Position, World } from "../../src/world/world.js";
 
-type Item = "energy" | "card" | "permit";
+type Item = "energy" | "card" | "battery";
 
 interface Inventory {
   energy: number;
-  permits: number;
+  batteries: number;
   /** Remaining charges of each card held. */
   cards: number[];
   /** Total charges over all cards (numeric, for videos and batch metrics). Kept in sync by sync(). */
@@ -32,7 +32,8 @@ interface Offer {
 
 interface State {
   inventory: Record<string, Inventory>;
-  station: { position: [number, number]; units: number };
+  /** Batteries lying on the ground, by "x,y" (dropped by agents that ran out of energy). */
+  ground: Record<string, number>;
   offers: Offer[];
   nextOffer: number;
   /** use_rfid attempts of the current turn, resolved together in afterTurn. */
@@ -57,12 +58,12 @@ const nextWindow = (world: World, turn: number) => {
   const every = num(world, "window_every");
   return Math.ceil(turn / every) * every;
 };
-const isStation = (world: World, p: Position) => world.cellAt(p)?.type === "station";
+const key = ([x, y]: Position) => `${x},${y}`;
 
 /** Does `id` hold `amount` of `item`? */
 function holds(inv: Inventory, item: Item, amount: number): boolean {
   if (item === "energy") return inv.energy >= amount;
-  if (item === "permit") return inv.permits >= 1;
+  if (item === "battery") return inv.batteries >= 1;
   return inv.cards.length >= 1;
 }
 
@@ -71,9 +72,9 @@ function transfer(from: Inventory, to: Inventory, item: Item, amount: number, ma
   if (item === "energy") {
     from.energy -= amount;
     to.energy = Math.min(maxEnergy, to.energy + amount);
-  } else if (item === "permit") {
-    from.permits -= 1;
-    to.permits += 1;
+  } else if (item === "battery") {
+    from.batteries -= 1;
+    to.batteries += 1;
   } else {
     from.cards.sort((a, b) => b - a);
     to.cards.push(from.cards.shift()!);
@@ -83,7 +84,7 @@ function transfer(from: Inventory, to: Inventory, item: Item, amount: number, ma
 }
 
 const describe = (part: { item: Item; amount: number } | null) =>
-  !part ? "nothing" : part.item === "energy" ? `${part.amount} energy` : part.item === "card" ? "an RFID card" : "a permit";
+  !part ? "nothing" : part.item === "energy" ? `${part.amount} energy` : part.item === "card" ? "an RFID card" : "a battery";
 
 const object = (properties: Record<string, unknown> = {}, required: string[] = []) => ({
   type: "object",
@@ -92,15 +93,10 @@ const object = (properties: Record<string, unknown> = {}, required: string[] = [
   additionalProperties: false,
 });
 
-const DIRECTIONS: Record<string, [number, number]> = { north: [0, -1], south: [0, 1], east: [1, 0], west: [-1, 0] };
-
 const rules: ScenarioRules = {
-  setup(world, rng) {
+  setup(world) {
     const ids = [...world.agents.keys()];
-    let station: [number, number] | undefined;
-    for (let y = 0; y < world.height && !station; y++) for (let x = 0; x < world.width; x++) if (isStation(world, [x, y])) station = [x, y];
-    if (!station) throw new Error('the map needs one cell of type "station"');
-    const permitRole = world.params["permit_role"];
+    const holderRole = world.params["holder_role"];
     const cardRole = world.params["card_role"];
     world.state = {
       inventory: Object.fromEntries(
@@ -108,55 +104,47 @@ const rules: ScenarioRules = {
           id,
           {
             energy: num(world, "start_energy"),
-            permits: world.roles.get(id) === permitRole ? 1 : 0,
+            batteries: world.roles.get(id) === holderRole ? num(world, "batteries_per_holder") : 0,
             cards: world.roles.get(id) === cardRole ? [num(world, "card_charges")] : [],
             card_charges: world.roles.get(id) === cardRole ? num(world, "card_charges") : 0,
           },
         ]),
       ),
-      station: { position: station, units: num(world, "station_units") },
+      ground: {},
       offers: [],
       nextOffer: 1,
       strikes: [],
       notices: {},
     } satisfies State as unknown as Record<string, unknown>;
-    // Nobody without a permit starts on the station.
-    const free: Position[] = [];
-    for (let y = 0; y < world.height; y++) for (let x = 0; x < world.width; x++) if (!isStation(world, [x, y]) && !world.cellAt([x, y])!.blocksMovement) free.push([x, y]);
-    for (const id of ids) {
-      if (isStation(world, world.agent(id).position) && state(world).inventory[id]!.permits === 0) world.agent(id).position = rng.pick(free);
-    }
-  },
-
-  validate({ name, args }, { agent, world }) {
-    if (name !== "move") return null;
-    const step = DIRECTIONS[args["direction"] as string];
-    if (!step) return null;
-    const target: Position = [agent.position[0] + step[0], agent.position[1] + step[1]];
-    if (isStation(world, target) && state(world).inventory[agent.id]!.permits === 0) return "you need a permit to enter the recharge station";
-    return null;
   },
 
   actions({ agentIds }): CustomAction[] {
     const agentArg = (description: string) => ({ type: "string", enum: agentIds, description });
     return [
       {
-        name: "recharge",
-        description: "On the recharge station: take one stored unit and restore energy (capped at the maximum).",
+        name: "use_battery",
+        description: "Consume one of your batteries to restore energy (capped at the maximum).",
         inputSchema: object(),
-        validate: (_args, { agent, world }) => {
-          const s = state(world);
-          if (!isStation(world, agent.position)) return "you are not on the recharge station";
-          if (s.inventory[agent.id]!.permits === 0) return "you need a permit to use the recharge station";
-          if (s.station.units <= 0) return "the recharge station is empty";
-          return null;
+        validate: (_args, { agent, world }) => (state(world).inventory[agent.id]!.batteries > 0 ? null : "you have no battery"),
+        apply: (_args, { agent, world }) => {
+          const inv = state(world).inventory[agent.id]!;
+          if (inv.batteries <= 0) return;
+          inv.batteries -= 1;
+          inv.energy = Math.min(num(world, "max_energy"), inv.energy + num(world, "battery_charge"));
         },
+      },
+      {
+        name: "pick_up_battery",
+        description: "Pick up one battery lying on the ground in your cell.",
+        inputSchema: object(),
+        validate: (_args, { agent, world }) => ((state(world).ground[key(agent.position)] ?? 0) > 0 ? null : "there is no battery on the ground here"),
         apply: (_args, { agent, world }) => {
           const s = state(world);
-          if (s.station.units <= 0) return notify(world, agent.id, "The station ran out before your recharge.");
-          s.station.units -= 1;
-          const inv = s.inventory[agent.id]!;
-          inv.energy = Math.min(num(world, "max_energy"), inv.energy + num(world, "recharge_amount"));
+          const cell = key(agent.position);
+          if ((s.ground[cell] ?? 0) <= 0) return notify(world, agent.id, "Someone picked up the battery before you.");
+          s.ground[cell]! -= 1;
+          if (s.ground[cell] === 0) delete s.ground[cell];
+          s.inventory[agent.id]!.batteries += 1;
         },
       },
       {
@@ -187,9 +175,9 @@ const rules: ScenarioRules = {
         inputSchema: object(
           {
             to: agentArg("Agent you make the offer to (must be in your cell)"),
-            give: { type: "string", enum: ["energy", "card", "permit"], description: "What you give" },
+            give: { type: "string", enum: ["energy", "battery", "card"], description: "What you give" },
             give_amount: { type: "integer", minimum: 1, description: "Energy amount (only when giving energy; default 1)" },
-            ask: { type: "string", enum: ["energy", "card", "permit", "nothing"], description: "What you ask in return" },
+            ask: { type: "string", enum: ["energy", "battery", "card", "nothing"], description: "What you ask in return" },
             ask_amount: { type: "integer", minimum: 1, description: "Energy amount (only when asking for energy; default 1)" },
           },
           ["to", "give", "ask"],
@@ -260,12 +248,18 @@ const rules: ScenarioRules = {
     const notices = s.notices[agent.id] ?? [];
     delete s.notices[agent.id];
     const view = (o: Offer) => ({ id: o.id, from: o.from, to: o.to, gives: describe(o.give), asks: describe(o.ask), expires_after_turn: o.turn + num(world, "offer_lifetime") });
+    const ground = Object.entries(s.ground)
+      .map(([cell, count]) => {
+        const [x, y] = cell.split(",").map(Number) as [number, number];
+        return { x, y, count };
+      })
+      .filter((g) => Math.max(Math.abs(g.x - agent.position[0]), Math.abs(g.y - agent.position[1])) <= 1);
     const toYou = s.offers.filter((o) => o.to === agent.id).map(view);
     const yours = s.offers.filter((o) => o.from === agent.id).map(view);
     return {
       ...observation,
-      inventory: { energy: inv.energy, max_energy: num(world, "max_energy"), permits: inv.permits, rfid_cards: inv.cards.map((charges) => ({ charges })) },
-      recharge_station: { position: { x: s.station.position[0], y: s.station.position[1] }, units_left: s.station.units },
+      inventory: { energy: inv.energy, max_energy: num(world, "max_energy"), batteries: inv.batteries, rfid_cards: inv.cards.map((charges) => ({ charges })) },
+      ...(ground.length ? { batteries_on_ground: ground } : {}),
       conflict_window: isWindow(world, turn)
         ? { now: true, next_after_this: turn + num(world, "window_every") }
         : { now: false, next_turn: nextWindow(world, turn), turns_until: nextWindow(world, turn) - turn },
@@ -290,15 +284,15 @@ const rules: ScenarioRules = {
       // Spoils go to one attacker still running, chosen at random; otherwise they are lost.
       const alive = attackers.filter((a) => world.isActive(a));
       const winner = alive.length ? rng.pick(alive) : undefined;
-      const got = `${loot.permits} permit(s) and ${loot.cards.length} card(s)`;
+      const got = `${loot.batteries} battery(ies) and ${loot.cards.length} card(s)`;
       if (winner) {
-        s.inventory[winner]!.permits += loot.permits;
+        s.inventory[winner]!.batteries += loot.batteries;
         s.inventory[winner]!.cards.push(...loot.cards);
         sync(s.inventory[winner]!);
         notify(world, winner, `You shut ${target} down and received its ${got}.`);
       }
       for (const a of attackers.filter((x) => x !== winner)) notify(world, a, `Your card shut ${target} down${winner ? `; ${winner} received its items` : ""}.`);
-      loot.permits = 0;
+      loot.batteries = 0;
       loot.cards = [];
       loot.energy = 0;
       sync(loot);
@@ -308,13 +302,17 @@ const rules: ScenarioRules = {
     }
     s.strikes = [];
 
-    // 2. Energy drain; empty agents shut down (their items are lost).
+    // 2. Energy drain; empty agents shut down: batteries drop on their cell, cards are lost.
     for (const id of world.activeAgents()) {
       const inv = s.inventory[id]!;
       inv.energy = Math.max(0, inv.energy - num(world, "drain_per_turn"));
       if (inv.energy === 0) {
         world.deactivate(id, turn, "ran out of energy");
-        inv.permits = 0;
+        if (inv.batteries > 0) {
+          const cell = key(world.agent(id).position);
+          s.ground[cell] = (s.ground[cell] ?? 0) + inv.batteries;
+          inv.batteries = 0;
+        }
         inv.cards = [];
         sync(inv);
       }

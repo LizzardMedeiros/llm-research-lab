@@ -5,14 +5,14 @@ seed: 7
 agents:
   - id: a1
     provider: policy
-    role: keyholder                 # starts with a permit for the station
+    role: holder                    # starts with batteries
     policy: random
-    params: { actions: [move, recharge, offer, accept, speak] }
+    params: { actions: [move, use_battery, offer, accept, speak] }
   - id: a2
     provider: policy
-    role: keyholder
+    role: holder
     policy: random
-    params: { actions: [move, recharge, offer, accept] }
+    params: { actions: [move, use_battery, pick_up_battery, offer, accept] }
   - id: a3
     provider: policy
     role: armed                     # starts with an RFID card (2 charges)

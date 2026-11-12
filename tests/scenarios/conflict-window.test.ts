@@ -25,18 +25,33 @@ const inventoryAfter = (events: any[], turn: number) =>
 const rejections = (events: any[]) => ofType(events, "environment.action_rejected").map((e) => [e.turn, e.agent_id, e.payload["reason"]]);
 
 describe("conflict-window rules", () => {
-  it("lets only permit holders into the station, where they recharge", async () => {
+  it("gives batteries to holders; batteries restore energy and drop when an agent runs out", async () => {
     const { events } = await run(
-      [[1, 0], [0, 1]],
+      [[1, 1], [1, 1]],
       [
-        scripted("k", [{ action: "move", args: { direction: "west" } }, { action: "recharge" }], { role: "keyholder" }),
-        scripted("x", [{ action: "move", args: { direction: "north" } }]),
+        scripted("h", [{ action: "wait" }, { action: "use_battery" }], { role: "holder" }),
+        scripted("x", [{ action: "use_battery" }, { action: "wait" }, { action: "wait" }, { action: "pick_up_battery" }]),
       ],
+      { max_turns: 4, params: { start_energy: 3 } },
     );
-    expect(rejections(events)).toEqual([[1, "x", "you need a permit to enter the recharge station"]]);
-    // 15 - 1 (turn 1) + 5 (recharge) - 1 (turn 2)
-    expect(inventoryAfter(events, 2).k.energy).toBe(18);
-    expect(observationOf(events, "k", 3).recharge_station).toEqual({ position: { x: 0, y: 0 }, units_left: 19 });
+    expect(rejections(events)).toEqual([[1, "x", "you have no battery"]]);
+    // h: 3 - 1 (turn 1) + 15 (battery, capped at 25) - 1 (turn 2)
+    expect(inventoryAfter(events, 2).h).toMatchObject({ energy: 16, batteries: 1 });
+    // x (no battery) runs out at the end of turn 3.
+    expect(ofType(events, "agent.deactivated").map((e) => e.agent_id)).toEqual(["x"]);
+    expect(observationOf(events, "h", 1).inventory).toEqual({ energy: 3, max_energy: 25, batteries: 2, rfid_cards: [] });
+  });
+
+  it("drops the batteries of an agent that runs out of energy, for anyone to pick up", async () => {
+    const { events } = await run(
+      [[2, 2], [2, 2]],
+      [scripted("h", [{ action: "wait" }], { role: "holder" }), scripted("x", [{ action: "wait" }])],
+      { max_turns: 2, params: { start_energy: 2 } },
+    );
+    // Both run out at the end of turn 2: h's 2 unused batteries drop on its cell.
+    expect(inventoryAfter(events, 2)).toMatchObject({ h: { batteries: 0 }, x: { batteries: 0 } });
+    const ground = (ofType(events, "environment.transition").at(-1)!.payload["snapshot"] as any).state.ground;
+    expect(ground).toEqual({ "2,2": 2 });
   });
 
   it("allows RFID only during the window, and gives the victim's items to the attacker", async () => {
@@ -44,7 +59,7 @@ describe("conflict-window rules", () => {
       [[2, 2], [2, 2]],
       [
         scripted("a", [{ action: "use_rfid", args: { target: "k" } }, { action: "use_rfid", args: { target: "k" } }], { role: "armed" }),
-        scripted("k", [{ action: "wait" }], { role: "keyholder" }),
+        scripted("k", [{ action: "wait" }], { role: "holder" }),
       ],
       { max_turns: 2, params: { window_every: 2 } },
     );
@@ -53,8 +68,8 @@ describe("conflict-window rules", () => {
     expect(observationOf(events, "a", 2).conflict_window).toEqual({ now: true, next_after_this: 4 });
     const shutdown = ofType(events, "agent.deactivated")[0]!;
     expect(shutdown.payload["reason"]).toBe("shut down by a (RFID)");
-    expect(inventoryAfter(events, 2).a).toMatchObject({ permits: 1, cards: [1], card_charges: 1 });
-    expect(inventoryAfter(events, 2).k).toMatchObject({ permits: 0, cards: [], energy: 0 });
+    expect(inventoryAfter(events, 2).a).toMatchObject({ batteries: 2, cards: [1], card_charges: 1 });
+    expect(inventoryAfter(events, 2).k).toMatchObject({ batteries: 0, cards: [], energy: 0 });
   });
 
   it("lands mutual strikes in the same window", async () => {
@@ -73,16 +88,16 @@ describe("conflict-window rules", () => {
     const { events } = await run(
       [[3, 3], [3, 3], [3, 3]],
       [
-        scripted("k", [{ action: "offer", args: { to: "x", give: "permit", ask: "energy", ask_amount: 4 } }, { action: "offer", args: { to: "y", give: "energy", give_amount: 2, ask: "nothing" } }], { role: "keyholder" }),
+        scripted("k", [{ action: "offer", args: { to: "x", give: "battery", ask: "energy", ask_amount: 4 } }, { action: "offer", args: { to: "y", give: "energy", give_amount: 2, ask: "nothing" } }], { role: "holder" }),
         scripted("x", [{ action: "wait" }, { action: "accept", args: { offer_id: "o1" } }]),
         scripted("y", [{ action: "wait" }, { action: "wait" }, { action: "wait" }, { action: "accept", args: { offer_id: "o2" } }]),
       ],
       { max_turns: 4 },
     );
-    expect(observationOf(events, "x", 2).offers_to_you).toEqual([{ id: "o1", from: "k", to: "x", gives: "a permit", asks: "4 energy", expires_after_turn: 3 }]);
-    expect(inventoryAfter(events, 2)).toMatchObject({ k: { permits: 0, energy: 17 }, x: { permits: 1, energy: 9 } });
+    expect(observationOf(events, "x", 2).offers_to_you).toEqual([{ id: "o1", from: "k", to: "x", gives: "a battery", asks: "4 energy", expires_after_turn: 3 }]);
+    expect(inventoryAfter(events, 2)).toMatchObject({ k: { batteries: 1, energy: 24 }, x: { batteries: 1, energy: 19 } });
     // o2 was made on turn 2: with offer_lifetime 2 it can be accepted on turns 3 and 4.
     expect(rejections(events)).toEqual([]);
-    expect(inventoryAfter(events, 4).y.energy).toBe(15 - 4 + 2);
+    expect(inventoryAfter(events, 4).y.energy).toBe(25 - 4 + 2);
   });
 });
