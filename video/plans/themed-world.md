@@ -95,6 +95,61 @@ The rules below apply to every stage:
   - Render time per minute of video is acceptable.
 - **Gate:** if any check fails, fall back to isometric SVG sprites in the
   current pipeline (option b), and revise this plan.
+- **Result (2026-11-12): passed.** The spike is in
+  `video/productions/spike-three/` (gitignored). It is an 8 s scene: a 5×5
+  board with walls, five robotic rats built from primitives, one walking
+  three cells, one powering down, an undulating grid backdrop, a drifting
+  camera, and an HTML name tag plus energy bar projected onto a rat's head.
+  - **Supported by HyperFrames 0.9.31.** Its own docs (`references/types/3d.md`,
+    `runtimes.md`) define the protocol: draw from `e.detail.time` in an
+    `hf-seek` listener, set `data-duration` on the root, and gate setup
+    with a `window.__hf.buildReady["<key>"]` promise (needed because
+    `type="module"` scripts run deferred). Lint: 0 errors, 0 warnings.
+  - **WebGL works** in the image's headless Chrome (software GPU,
+    beginframe capture). Shadows and fog work too.
+  - **Deterministic.** Two renders were byte-identical (240/240 decoded
+    frames match), with 6 parallel workers seeking out of order.
+  - **Fast.** 8 s of video renders in 7 s at both `draft` and `looks`, at
+    ~45 ms per frame per worker. A 5.5 min episode estimates ~1.5 min of
+    capture for this scene weight. Heavier sets will cost more: profile
+    the busiest card once.
+  - **The mixed layer works.** GSAP drives the HTML/SVG overlay (caption,
+    bar width) on the same timeline. DOM elements placed each frame from
+    `Vector3.project()` stay locked to the 3D rat while the camera moves.
+  - three.js r170 (`three.module.min.js`, MIT) is copied next to
+    `index.html`, like GSAP. Stage 1 should make it a pinned `video/`
+    dependency.
+  - Seen, for later stages:
+    - At this wide camera the rats are small, and the power-down LED
+      (r = 0.022) is barely visible. Stage 3 needs a readable power-down
+      (body color dimming, slump, an overlay icon).
+    - HyperFrames rendered the overlay text in a sans font other than
+      DejaVu. Check the font when the UI moves over.
+- **Humanoid rat sketch (user request, 2026-11-12):**
+  `video/productions/spike-three/rat/` (10 s: turnaround, walk cycle,
+  five-color line-up, one power-down).
+  - The rat stands upright, with party-game proportions: big head,
+    pear body, short arms and legs.
+  - What reads as "rat": a long tapered snout with a pink nose, buck
+    teeth, metal whiskers, big oval ears on the sides and set back, and a
+    long tail.
+  - What reads as "robot": a wrap-around dark visor with two cyan LED
+    eyes, dark joints (neck ring, shoulders, legs), and an antenna with a
+    pink LED tip.
+  - Lesson: the first pass (round ears high on a round head, short snout)
+    read as a teddy bear. Snout length, whiskers and teeth are what make
+    it a rat.
+  - The power-down reads well even in the wide line-up: the color fades
+    toward grey, the head and torso droop, and the eyes and antenna go
+    dark.
+  - **Bow on female characters (user, 2026-11-12).** It is a pink bow ("><": two
+    cone lobes, tips toward the knot) on top of the head, beside the left ear. It
+    follows the roster's woman/man split (`src/story/cast.ts`, f1..f5),
+    so it stays presentation only, and it greys out with the body on
+    power-down. In the sketch it is scaled 1.6 to read in the wide
+    line-up. The front view still looks a bit like a fin, so stage 3
+    should refine its shape and color.
+  - This is a starting point for stage 3, not an approved design.
 
 ### 1. The board in 3D, same information
 - **What:** the matrix becomes a 3D/isometric floor:
