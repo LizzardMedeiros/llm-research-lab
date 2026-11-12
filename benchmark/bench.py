@@ -226,6 +226,33 @@ def narration_metrics(lines, duration):
     }
 
 
+def transcript(lines, chapters, source):
+    """Full narration text, timestamped, one paragraph per ~30 s, under the video's chapter headings."""
+    if not lines:
+        return None
+    md = ["# Transcript", "", f"Source: {source}. Verbatim from the captions; auto-captions may misspell or lack punctuation.", ""]
+    marks = sorted(chapters, key=lambda c: c["start_s"])
+    paragraph, para_start = [], None
+
+    def flush():
+        if paragraph:
+            md.extend([f"[{fmt_time(para_start)}] " + " ".join(paragraph), ""])
+            paragraph.clear()
+
+    for start, _end, text in lines:
+        while marks and start >= marks[0]["start_s"]:
+            flush()
+            chapter = marks.pop(0)
+            md.extend([f"## {fmt_time(chapter['start_s'])} {chapter['title']}", ""])
+        if paragraph and start - para_start >= 30:
+            flush()
+        if not paragraph:
+            para_start = start
+        paragraph.append(text)
+    flush()
+    return "\n".join(md)
+
+
 def frame_sheets(path, duration, folder):
     """Two contact sheets: the first 20 s (every 2 s) and the whole video (16 evenly spaced frames)."""
     sheets = []
@@ -301,6 +328,10 @@ def analyze(path, subs=None, timeline=None, out=None, info=None):
         "narration": narration_metrics(lines, duration),
         "narration_source": "timeline.json" if timeline else (Path(subs).name if subs else None),
     }
+    text = transcript(lines, report["chapters"], report["narration_source"])
+    if text:
+        write(folder / "transcript.md", text)
+    report["transcript"] = "transcript.md" if text else None
     report["frames"] = frame_sheets(path, duration, folder)
     write(folder / "report.json", report)
     write(folder / "report.md", render_report(report))
@@ -333,6 +364,7 @@ def render_report(r):
             f"- words by minute: {n['words_per_minute_by_minute']}",
             f"- median sentence: {n['sentence_words_median']} words; questions: {n['questions']}",
             f"- hook (first 30 s): {n['hook_first_30s']}",
+            f"- full text: {r.get('transcript')}",
         ]
     else:
         md.append("- no subtitles or timeline available")
@@ -398,6 +430,7 @@ def selftest():
         "3 cuts": report["editing"]["cuts"] == 3,
         "10 words (rolling caption deduplicated)": report["narration"]["words"] == 10,
         "a pause found": report["audio"]["pauses_over_0_4s"] >= 1,
+        "transcript with the full text": "share four batteries." in (folder / "report" / "transcript.md").read_text(),
         "two frame sheets": all((folder / "report" / f).exists() for f in report["frames"]),
     }
     for name, ok in checks.items():

@@ -1270,7 +1270,10 @@ docker compose --profile benchmark run --rm benchmark selftest   # offline check
   - **narration**, from subtitles or auto-captions (or our `timeline.json`
     lines): words per minute, words per minute over time, when the first
     words come, sentence length, and the hook text (first 30 s);
-  - **audio:** integrated loudness (LUFS), loudness range, pauses.
+  - **audio:** integrated loudness (LUFS), loudness range, pauses;
+  - **transcript:** `transcript.md` holds the full narration text verbatim,
+    timestamped every ~30 s and grouped under the video's chapters, so the
+    subject and structure can be read (by a person or Claude in session).
 - **compare** puts the key metrics of several reports side by side
   (`benchmarks/compare.md`).
 - Outputs go to `benchmarks/` (gitignored). Downloaded media is for private
