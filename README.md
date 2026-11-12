@@ -1243,6 +1243,43 @@ docker compose --profile video run --rm video \
 
 ---
 
+## Format benchmark (`benchmark/`)
+
+An isolated tool, with its own image and compose profile, that measures
+reference videos so our episodes can be compared with formats we like. It is
+not part of the lab: the engine never imports it, and it only reads public
+pages and the files it downloads.
+
+```bash
+docker compose --profile benchmark build benchmark          # once; rebuild to update yt-dlp
+docker compose --profile benchmark run --rm benchmark channel <channel-url> [--limit 30]
+docker compose --profile benchmark run --rm benchmark video <video-url>
+docker compose --profile benchmark run --rm benchmark analyze <episode.mp4> --timeline <timeline.json> [--out DIR]
+docker compose --profile benchmark run --rm benchmark compare benchmarks/**/report.json
+docker compose --profile benchmark run --rm benchmark selftest   # offline check
+```
+
+- **channel:** recent videos with title, duration, views and approximate
+  upload date, plus format statistics (duration quartiles, title length,
+  numbers, questions, caps words, upload cadence).
+- **video / analyze** write `report.json`, `report.md` and two contact
+  sheets (the first 20 s, and 16 frames over the whole video):
+  - **editing:** hard cuts from scene detection (cuts per minute, median shot
+    length, cuts in the first 30 s, cuts per minute over time; `--scene`
+    sets the sensitivity);
+  - **narration**, from subtitles or auto-captions (or our `timeline.json`
+    lines): words per minute, words per minute over time, when the first
+    words come, sentence length, and the hook text (first 30 s);
+  - **audio:** integrated loudness (LUFS), loudness range, pauses.
+- **compare** puts the key metrics of several reports side by side
+  (`benchmarks/compare.md`).
+- Outputs go to `benchmarks/` (gitignored). Downloaded media is for private
+  analysis only: never commit or redistribute it.
+- Limits: animated wipes, zooms and fades rarely count as cuts; auto-captions
+  have little punctuation, so sentence metrics are rough.
+
+---
+
 # 17. Testing Strategy
 
 The POC must be testable without calling real LLM APIs.
@@ -1265,7 +1302,8 @@ Real providers are used only for integration tests and actual experiments.
 
 # 18. Explicitly Out of Scope
 
-- microservices;
+- microservices (the format benchmark in `benchmark/` is an isolated CLI tool
+  run on demand, not a service);
 - distributed execution;
 - authentication;
 - multi-user support;

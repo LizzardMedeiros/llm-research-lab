@@ -750,6 +750,8 @@ writeFileSync(
       title: story.title,
       total_seconds: Number(f(total)),
       cards: cards.map((card) => ({ id: card.id, kind: card.kind, turn: card.turn, label: chapterLabel(card), start: Number(f(card.start)), duration: Number(f(card.duration)) })),
+      // Every voiced line with its timing (narration and verbatim dialogue), e.g. for cadence benchmarks.
+      lines: cards.flatMap((card) => card.clips.map((c) => ({ role: c.role, ...(c.agent ? { agent: c.agent } : {}), start: Number(f(c.start)), duration: Number(f(c.duration)), text: c.spoken ?? c.text }))),
     },
     null,
     2,

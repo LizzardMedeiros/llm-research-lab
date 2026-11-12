@@ -12,3 +12,6 @@ dist/
 
 # Batch outputs (manifests and reports); batch definitions (*.yaml) are versioned
 batches/*/
+
+# Benchmark downloads and reports (third-party media: never commit)
+benchmarks/

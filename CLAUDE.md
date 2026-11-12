@@ -27,6 +27,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `docker compose --profile video run --rm video node /app/video/build.mjs <story.json>` — render it
   - `npm run script:check -- <script.json>` — validate a written episode script, resolve quotes, write facts.md
   - `npm run mcp` — observer MCP server on stdio (`LAB_EVENTS_DIR`, default `events`)
+  - `docker compose --profile benchmark run --rm benchmark <channel|video|analyze|compare|selftest> ...`
+    — format benchmark of reference videos (`benchmark/`, outputs in
+    gitignored `benchmarks/`; downloaded media is never committed)
   - `docker compose up -d ui` — replay/live UI at http://localhost:3100 (`LAB_PORT`;
     3000 is taken by another project on this machine)
 - Local model servers:

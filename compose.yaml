@@ -56,6 +56,17 @@ services:
       - video_cache:/home/node/.cache   # Chrome download and TTS model, kept between runs
     command: ["npx", "--prefix", "/video", "hyperframes", "doctor"]
 
+  benchmark:
+    build: ./benchmark
+    image: llm-research-lab-benchmark
+    profiles: ["benchmark"]
+    user: "${UID:-1000}:${GID:-1000}"
+    working_dir: /app
+    volumes:
+      - .:/app
+    entrypoint: ["python3", "/app/benchmark/bench.py"]
+    command: ["--help"]
+
   ollama:
     image: ollama/ollama:latest
     profiles: ["ollama"]
