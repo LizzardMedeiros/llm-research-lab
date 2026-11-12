@@ -4,8 +4,9 @@
   "type": "module",
   "description": "Turns lab run logs into narrated videos with HyperFrames",
   "dependencies": {
+    "gsap": "3.13.0",
     "hyperframes": "0.9.31",
-    "gsap": "3.13.0"
+    "three": "0.170.0"
   },
   "scripts": {
     "build": "node build.mjs"

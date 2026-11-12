@@ -6,7 +6,8 @@
 // script.resolved.json (a written script, `npm run script:check`). An optional
 // direction.json next to the input lets a director override, per scene id:
 //   { "scenes": { "<id>": { "panel": "auto"|true|false, "camera": "auto"|"wide"|["b1","b3"],
-//                            "pace": <extra seconds held, -0.5..4>, "transition": "wipe"|"cut" } } }
+//                            "pace": <extra seconds held, -0.5..4>, "transition": "wipe"|"cut" } },
+//     "world": "board"|"3d" }   ("3d": the board is drawn as a three.js set with robotic rats, world3d.js)
 //
 // Output, next to the input: audio/*.wav, index.html, gsap.min.js, timeline.json, <name>.mp4
 // Dialogue on screen is verbatim from the run log. Narration is labeled.
@@ -22,6 +23,7 @@ import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { portraitSvg } from "./portrait.mjs";
+import { ratPortraitSvg } from "./rat-portrait.mjs";
 
 const W = 1280;
 const H = 720;
@@ -97,7 +99,10 @@ const DIRECTION_KEYS = new Set(["panel", "camera", "pace", "transition"]);
 if (direction.atmosphere !== undefined && direction.atmosphere !== false && (typeof direction.atmosphere !== "object" || Object.keys(direction.atmosphere).some((k) => !["music", "effects"].includes(k) || typeof direction.atmosphere[k] !== "number"))) {
   throw new Error('direction.json: atmosphere must be false or { "music": <level>, "effects": <level> } (1 = default)');
 }
-for (const key of Object.keys(direction)) if (!["scenes", "tension", "atmosphere"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
+for (const key of Object.keys(direction)) if (!["scenes", "tension", "atmosphere", "world"].includes(key)) throw new Error(`direction.json: unknown top-level key "${key}"`);
+if (direction.world !== undefined && !["board", "3d"].includes(direction.world)) throw new Error('direction.json: world must be "board" or "3d"');
+// "3d": the 2D board below still runs (hidden) as a puppet; world3d.js draws its state in 3D.
+const WORLD3D = direction.world === "3d";
 if (direction.tension !== undefined && (typeof direction.tension?.field !== "string" || typeof direction.tension?.at_or_below !== "number")) {
   throw new Error('direction.json: tension must be { "field": "<stat>", "at_or_below": <number> }');
 }
@@ -129,7 +134,9 @@ const voice = (id) => member(id).voice;
 /** "Bonsai 3 · b3" (just the id when the character has no own name). */
 const nameOf = (id) => (member(id).name === id ? id : `${member(id).name} · ${id}`);
 const shortName = (id) => member(id).name;
-const portrait = (id, expression, size) => portraitSvg(member(id).portrait, expression, color(id), size);
+// The 3D world casts robotic lab rats: portraits follow (same color, bow on feminine characters).
+const portrait = (id, expression, size) =>
+  WORLD3D ? ratPortraitSvg(color(id), expression, member(id).presentation === "feminine", size) : portraitSvg(member(id).portrait, expression, color(id), size);
 const f = (n) => Number(n).toFixed(2);
 
 function spokenPart(text) {
@@ -299,7 +306,15 @@ const tokens = ids
   .join("");
 
 const tl = []; // GSAP calls, in order
-const callouts = []; // per-card callout elements (inside the camera)
+const callouts = []; // per-card callout elements (inside the camera; screen-space in 3D)
+const moves3d = Object.fromEntries(ids.map((id) => [id, []])); // [t0, duration, from u, v, to u, v] in cell units
+const lastCenter = {};
+const speeches3d = []; // [start, end, speaker, listeners] for every dialogue line
+const logMove = (id, c, at, duration) => {
+  const from = lastCenter[id] ?? c;
+  moves3d[id].push([Number(f(at)), duration, ...from.map((n) => Number(f(n / cell))), ...c.map((n) => Number(f(n / cell)))]);
+  lastCenter[id] = c;
+};
 
 /**
  * State panel. Rows start at the world at the START of the turn and resolve to
@@ -453,7 +468,13 @@ const cardHtml = cards
         const candidates = [...(cy > 0 ? [up, down] : [down, up]).flat().filter(inBoard), ...Array.from({ length: Math.floor(boardH / CALLOUT_STEP) }, (_, j) => 2 + j * CALLOUT_STEP)];
         const topIn = candidates.find((t) => !overlaps(left, t, w)) ?? candidates[0] ?? 2;
         placed.push([left, topIn, w]);
-        callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(topIn)}px;width:${f(w - 16)}px">${esc(text)}</div>`);
+        if (WORLD3D) {
+          // Screen-space: world3d.js places it above the actor's spot, stacked per cell.
+          const k3 = card.callouts.filter((o) => o.cell === `${cx},${cy}`).length;
+          callouts.push(`<div class="callout callout3d${rejected ? " rejected" : ""}" id="${id}" data-u="${f(cx + 0.5)}" data-v="${f(cy + 0.5)}" data-k="${k3}" data-w="${f(w)}" style="width:${f(w - 16)}px">${esc(text)}</div>`);
+        } else {
+          callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(topIn)}px;width:${f(w - 16)}px">${esc(text)}</div>`);
+        }
         const pop = card.start + card.lead + k * 0.25;
         // Hide after the turn resolves, but never before it has been readable (and never after the card).
         const hide = Math.min(end - 0.1, Math.max(pop + 1.5, Math.min(end - 0.4, card.resolveAt - 0.1)));
@@ -461,7 +482,7 @@ const cardHtml = cards
         tl.push(`tl.fromTo("#${id}", {opacity:0, scale:0.3}, {opacity:1, scale:1, duration:0.35, ease:"back.out(3)"}, ${f(pop)});`);
         tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(hide)});`);
         sfx.push([pop, rejected ? "rejected" : "action"]);
-        card.callouts.push({ box: [[left, topIn], [left + w, topIn + CALLOUT_H]], from: pop, to: hide });
+        card.callouts.push({ box: [[left, topIn], [left + w, topIn + CALLOUT_H]], from: pop, to: hide, cell: `${cx},${cy}` });
       });
 
       // Shutdowns: shake, flash, stamp.
@@ -512,6 +533,7 @@ const cardHtml = cards
       const off = startView?.inactive?.includes(id);
       const at = SCENE_LIKE.has(card.kind) ? card.start + 0.5 : card.start;
       tl.push(`tl.to("#tok-${id}", {x:${f(c[0] - TOKEN / 2)}, y:${f(c[1] - TOKEN / 2)}, opacity:${off ? 0.25 : 1}, duration:${i === 0 ? 0.01 : 0.9}, ease:"power2.inOut"}, ${f(at)});`);
+      logMove(id, c, at, i === 0 ? 0.01 : 0.9);
       setExpression(id, expressionOf(id, startView), at);
       // The first card of the video brings the tokens in (the intro does it when it opens the video).
       if (i === 0 && card.kind !== "intro") tl.push(`tl.fromTo("#tok-${id}", {scale:0}, {scale:1, duration:0.5, ease:"back.out(3)"}, ${f(card.start + 0.7 + r * 0.15)});`);
@@ -519,6 +541,7 @@ const cardHtml = cards
       const offAfter = card.scene?.inactive?.includes(id);
       if (SCENE_LIKE.has(card.kind) && e && (e[0] !== c[0] || e[1] !== c[1] || offAfter !== off)) {
         tl.push(`tl.to("#tok-${id}", {x:${f(e[0] - TOKEN / 2)}, y:${f(e[1] - TOKEN / 2)}, opacity:${offAfter ? 0.25 : 1}, duration:0.8, ease:"power2.inOut"}, ${f(card.resolveAt)});`);
+        logMove(id, e, card.resolveAt, 0.8);
       }
       if (SCENE_LIKE.has(card.kind) && expressionOf(id, card.scene) !== expressionOf(id, startView)) setExpression(id, expressionOf(id, card.scene), card.resolveAt);
     });
@@ -570,6 +593,7 @@ const cardHtml = cards
           <div class="quote">“${esc(c.text)}”</div></div>`;
       tl.push(`tl.fromTo("#${id}", {opacity:0, y:50}, {opacity:1, y:0, duration:0.4, ease:"power3.out"}, ${f(c.start - 0.1)});`);
       tl.push(`tl.to("#${id}", {opacity:0, y:20, duration:0.3}, ${f(until - 0.15)});`);
+      speeches3d.push([Number(f(c.start)), Number(f(until - 0.2)), c.agent, c.heardBy]);
       // Close-up on the speaker and listeners; speaker pulses, listeners get a ring.
       const pts = [c.agent, ...c.heardBy].map((a) => startCenters[a]).filter(Boolean);
       if (closeUps) tl.push(`tl.to("#camera", {...${JSON.stringify(card.frame(pts, c.start - 0.2))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
@@ -713,16 +737,30 @@ const html = `<!doctype html>
   .endcard .endline { font-size:24px; color:#cfd6e4; opacity:0; }
   .endcard .signoff { font-size:22px; font-style:italic; color:#aab3c5; opacity:0; }
   .endcard .endref { font-size:14px; color:#7d879a; opacity:0; }
-  .footer { position:absolute; left:40px; right:40px; bottom:14px; font-size:12px; color:#6b7385; z-index:10; }
+${WORLD3D ? `  #gl { position:absolute; left:0; top:0; width:${W}px; height:${H}px; z-index:0; }
+  .w3d #viewport { background:transparent; box-shadow:none; overflow:visible; }
+  .w3d #camera { opacity:0; } /* the 2D puppet stays rendered (its SVG defs are shared with portraits) but invisible */
+  .callout3d { position:absolute; left:0; top:0; z-index:3; }
+  .tags3d { position:absolute; inset:0; z-index:1; pointer-events:none; }
+  .tag3d { position:absolute; transform:translate(-50%, -100%); font-size:11px; font-weight:700; color:#fff; border-radius:6px; padding:1px 6px; white-space:nowrap; box-shadow:0 1px 4px #0008; opacity:0; }
+` : ""}  .footer { position:absolute; left:40px; right:40px; bottom:14px; font-size:12px; color:#6b7385; z-index:10; }
 </style>
 </head>
 <body>
-<div id="root" data-composition-id="root" data-width="${W}" data-height="${H}" data-duration="${f(total)}">
-  <div id="viewport"><div id="camera">${boardCells}${tokens}${callouts.join("")}</div></div>
+<div id="root"${WORLD3D ? ' class="w3d"' : ""} data-composition-id="root" data-width="${W}" data-height="${H}" data-duration="${f(total)}">
+  ${WORLD3D ? `<canvas id="gl" width="${W}" height="${H}"></canvas>` : ""}
+  <div id="viewport"><div id="camera">${WORLD3D ? tokens : `${boardCells}${tokens}${callouts.join("")}`}</div></div>
+  ${WORLD3D ? callouts.join("") : ""}
   ${cardHtml}
   ${audio}
   <div class="footer clip" id="footer" data-start="0" data-duration="${f(total)}">${esc(SERIES.name)} · ${esc(SERIES.project)} · dialogue verbatim from ${esc(story.source ?? `${story.experimentId}/${story.runId}`)} · narration: ${esc(story.narrator === "template" ? "generated from logged facts" : story.narrator === "script" ? "scripted from logged facts, fact-checked" : `written by ${story.narrator} from logged facts`)}</div>
 </div>
+${WORLD3D ? `<script>
+  // world3d.js is a deferred module: HyperFrames waits for it before seeking.
+  window.__hf = window.__hf || {};
+  window.__hf.buildReady = window.__hf.buildReady || {};
+  window.__hf.buildReady.world3d = new Promise((resolve) => { window.__world3dReady = resolve; });
+</script>` : ""}
 <script src="gsap.min.js"></script>
 <script>
   const tl = gsap.timeline({ paused: true });
@@ -733,11 +771,30 @@ const html = `<!doctype html>
   window.__timelines = window.__timelines || {};
   window.__timelines["root"] = tl;
 </script>
+${WORLD3D ? `<script type="module">
+  import { mountWorld } from "./world3d.js";
+  const renderAt = mountWorld(document.getElementById("gl"), ${JSON.stringify({
+    W, H, view: VIEW, cell, token: TOKEN,
+    grid: { w: gridW, h: gridH, blocked: rows.flatMap((row, y) => [...row].map((sym, x) => (story.scenario.blocked.includes(sym) ? [x, y] : null)).filter(Boolean)) },
+    agents: ids.map((id) => ({ id, name: nameOf(id), color: color(id), feminine: member(id).presentation === "feminine" })),
+    moves: moves3d,
+    speeches: speeches3d,
+  })});
+  // Draw from timeline time: bring the 2D puppet to t, then read it.
+  const draw = (t) => { window.__timelines.root.seek(t); renderAt(t); };
+  window.addEventListener("hf-seek", (e) => draw(e.detail.time));
+  draw(0);
+  window.__world3dReady();
+</script>` : ""}
 </body>
 </html>
 `;
 
 copyFileSync("/video/node_modules/gsap/dist/gsap.min.js", join(outDir, "gsap.min.js"));
+if (WORLD3D) {
+  copyFileSync("/video/node_modules/three/build/three.module.min.js", join(outDir, "three.module.min.js"));
+  copyFileSync(fileURLToPath(new URL("./world3d.js", import.meta.url)), join(outDir, "world3d.js"));
+}
 writeFileSync(join(outDir, "index.html"), html);
 for (const card of cards) console.log(`  ${card.id.padEnd(14)} ${card.kind.padEnd(9)} turn ${String(card.turn).padEnd(4)} ${f(card.start)}s +${f(card.duration)}s`);
 const chapterLabel = (card) =>

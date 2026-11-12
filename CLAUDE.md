@@ -152,8 +152,14 @@ spec; read it before architectural changes and keep it in sync with decisions.
   `event_id` references resolved verbatim by `script:check`
   (`src/story/script.ts`). Narration passes a fact-check against `facts.md`
   and user approval before any render.
-- `video/` is a separate package and image (HyperFrames 0.9.31, GSAP, ffmpeg,
-  Chrome, Kokoro). Keep telemetry disabled; no HeyGen account or cloud render.
+- `video/` is a separate package and image (HyperFrames 0.9.31, GSAP,
+  three.js 0.170.0, ffmpeg, Chrome, Kokoro). Keep telemetry disabled; no
+  HeyGen account or cloud render.
+- 3D world (in progress, `video/plans/themed-world.md`): `direction.json`
+  `"world": "3d"` draws the board as a three.js set with robotic lab rats
+  (`video/world3d.js`, `video/rat-portrait.mjs`). The 2D composition stays the
+  hidden source of truth; the 3D layer only reads it. The 2D board is the
+  default until the user approves the switch.
 - `video/SCRIPTING.md` is the running log of script cadence (narration
   structure, hooks, rhythm), read by the `content-strategist`. Record each
   lesson from a reviewed script or a benchmark comparison there.

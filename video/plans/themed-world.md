@@ -171,6 +171,53 @@ The rules below apply to every stage:
   - In the wide shot, color, bow and power-down read, but faces only read
     in close-up. Keep the current grammar: wide for positions, close-up
     for speech and shutdowns.
+- **First cut (2026-11-12, user go-ahead):** conflict-window-bonsai/00002
+  v2 rendered in 3D (`video/productions/conflict-window-bonsai-00002-v2-3d/`,
+  draft quality, 5:30 rendered in ~5 min).
+  - How it works: `direction.json` `"world": "3d"`. `build.mjs` keeps
+    the whole 2D composition as a hidden puppet (`#camera` at opacity 0).
+    `video/world3d.js` reads the puppet on every seek and draws it:
+    - token x/y becomes the rat's cell;
+    - logged moves become a walk;
+    - the speech pulse becomes talking;
+    - opacity 0.25 becomes powered down;
+    - the shake carries over;
+    - the tense face becomes amber eyes;
+    - the listener ring becomes a floor ring;
+    - the board camera becomes the 3D target and zoom.
+
+    Callouts and name tags are projected onto the 3D scene. three.js
+    0.170.0 is now a pinned `video/` dependency.
+  - The 2D path is unchanged: the regenerated v2 `index.html` differs
+    only by blank lines.
+  - Lessons:
+    - Hiding the puppet with `visibility:hidden` blanked the dialogue
+      portraits, because they share SVG defs. Opacity 0 keeps them.
+    - Callouts anchored at the actor overlapped in shared cells.
+      Anchoring at the cell center stacks them cleanly.
+    - The 2D board window (360 px) makes rats tiny. The 3D zoom now
+      depends on where the board sits: closer when centered (stage),
+      wider beside the panel (side).
+  - Rat portraits (user review): in 3D mode the SVG avatars are robotic
+    rats (`video/rat-portrait.mjs`): the same color, visor and LED eyes,
+    and a "><" bow on feminine characters. They appear in the dialogue
+    box, panel rows, intro cast and outcome chart. Expressions:
+    - neutral: cyan eyes;
+    - tense: amber eyes;
+    - off: grey, eyes dark.
+  - Dialogue staging (user review):
+    - The yellow ring now marks the **speaker**. In 3D the listener ring
+      read as "who is talking". Listeners are named in the dialogue box.
+    - During each line the speaker turns to face its listeners, and each
+      listener turns to face the speaker. The turn eases in 0.4 s before
+      the line and out 0.3 s after it, with talking gestures.
+    - Timing comes from the logged dialogue (`speeches` in the 3D
+      config), not from the token pulse.
+  - Open (for review):
+    - In side and panel scenes the rats are still small.
+    - On the outcome card the board sits behind the chart.
+    - Name tags overlap in crowded cells (deferred).
+    - The camera only follows the 2D framing; no 3D-specific shots yet.
 
 ### 2. Motion and sound baseline
 - **What:** DIRECTION.md §8 benchmark items #1 and #2:
