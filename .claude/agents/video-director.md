@@ -55,8 +55,17 @@ Unknown keys or scene ids fail the build.
    `video/productions/<slug>/episode.mp4`.
 6. Verify the file, not the log: `ffprobe` stream durations (video ≈ audio
    ≈ timeline total) and `volumedetect` (audio not silent).
-7. Write `direction-notes.md` (choices made, issues found, proposals) and
-   report: duration, number of scenes, issues, proposals.
+7. Benchmark the episode against the reference videos (DIRECTION.md §7b):
+   `docker compose --profile benchmark run --rm benchmark analyze video/productions/<slug>/episode.mp4 --timeline video/productions/<slug>/timeline.json --out benchmarks/ours/<slug>`
+   then `... benchmark compare benchmarks/ours/<slug>/report.json benchmarks/<ref>/<id>/report.json`
+   (reference reports: `benchmarks/*/*/report.json`, outside `ours/`).
+   Note still share, longest still stretch and LUFS against the §7b
+   targets. Use `pace` and `transition` to cut dead holds where the
+   script allows it. Report the gaps you can't close as proposals; don't
+   loop on them.
+8. Write `direction-notes.md` (choices made, issues found, benchmark
+   gaps, proposals) and report: duration, number of scenes, issues,
+   benchmark comparison, proposals.
 
 ## Rules
 - Never change `script.json` narration, quotes or scene order. If the story

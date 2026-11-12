@@ -215,11 +215,152 @@ the seed of a future skill: keep it current whenever the video changes.
 - Verify the file, not the log: `ffprobe` stream durations and
   `volumedetect` for audio.
 
+## 7b. Format benchmark (reference videos)
+
+- After the final render, measure the episode with the format benchmark
+  (`benchmark/bench.py analyze <episode.mp4> --timeline <timeline.json>`,
+  README §16) and compare it with the reference reports
+  (`bench.py compare`). Report the gaps in `direction-notes.md`.
+- Reference so far (n = 1, a guide, not a norm): Limiar, "Uma IA Incendiou
+  a Cidade…" (2026, 14:12), compared with conflict-window-bonsai/00002:
+
+  | measure | reference | ours |
+  |---|---:|---:|
+  | still share (no visible change) | 4.6% | 90.3% |
+  | median still stretch | 1.5 s | 7.3 s |
+  | integrated loudness | −14 LUFS | −18.9 LUFS |
+  | narration words/min | 154 | 148 |
+  | chapters | 17 (one per ~50 s) | 0 |
+
+- What the gaps mean: the narration pace already matches. The picture
+  is what's different. The reference keeps the frame alive all the time
+  (drifting grid, particles, slow push-ins), while ours sits frozen on
+  the board between beats. Its audio is also mastered to YouTube's
+  −14 LUFS, and ours plays ~5 dB quieter.
+- Reference visual grammar worth borrowing (see §8 proposals): a
+  "big number" card for one striking count, quote cards headed by source
+  and time ("// diary · last entry · 19:57"), and a two-portrait face-off
+  for an exchange between two agents.
+- Targets for our renders until we have more references: still share
+  ≤ 30%, no still stretch > 4 s, −14 LUFS ± 1. These need the §8 build
+  changes; `direction.json` alone (`pace`, `transition: "cut"`) only
+  shortens holds.
+
 ## 8. Proposed adjustments
+
+### Open (2026-11-12, from the format benchmark, §7b)
+
+1. **Ambient motion.** The frame is still 90% of the time (reference
+   5%). Proposed rule: a background layer that always moves slowly
+   (drifting grid or particles, low contrast, behind the board), plus a
+   slow camera drift (scale +2% over each card) when no close-up is
+   active. It is decoration only, never tied to state, so it cannot
+   claim anything.
+   User direction (2026-11-12): nothing should feel static. The background
+   is never flat black. It is a 3D scene with depth and little motion,
+   like the reference's neon perspective grid that undulates gently toward
+   the horizon. Build our own look (series colors), not a copy. Explore
+   three.js for this layer, and later for giving the board and tokens
+   depth and motion.
+   Open technical question (spike first): HyperFrames renders by seeking
+   a paused GSAP timeline frame by frame, so a three.js scene must be
+   drawn from timeline time (a deterministic `render(t)` per seek, no
+   `requestAnimationFrame` clock). WebGL must work in the headless Chrome
+   of the `video` image. Bundle three.js locally like GSAP (§6).
+2. **Loudness mastering.** Ours is −18.9 LUFS, the reference −14 (the
+   YouTube target). Proposed rule: a final two-pass `loudnorm` to
+   −14 LUFS, true peak −1 dBTP, in `build.mjs`, and verify it with the
+   benchmark.
+3. **Big-number card.** A scene option that shows one count from
+   `facts.md` (e.g. "3 of 5 shut down by turn 10") large on screen with
+   its label. The number must come from the logged facts, never be
+   typed by hand.
+4. **Quote card header.** Show the source above long verbatim quotes,
+   as "// turn 12 · b3 → b1, b4", like the reference's
+   "// diary · 19:57". It adds traceability, and the timestamp builds
+   suspense.
+5. **Face-off layout.** For an exchange between two agents, put the two
+   portraits on opposite sides with the line between them, instead of the
+   bottom dialogue box. A `direction.json` option per scene.
 
 Proposals from the video-director agent (or from reviews) that need a
 `build.mjs` change. Each entry: date, problem seen (scene and timestamp),
 proposed rule. They become part of §1–§7 once adopted.
+
+### Under discussion (2026-11-12, user review of conflict-window v2): board-first layout
+
+User direction: the state panel still takes too much screen time. Focus
+on the board instead. Show energy as a bar under each actor's token and
+inventory as small icons next to it. Keep the panel for scenes that need
+a detailed explanation. Not decided yet; points to settle:
+
+- **Generic, not scenario-specific.** The bar is the tension field
+  (§2b: the first per-agent numeric field, or `direction.json`
+  `tension`). Icons only for built-in mechanics (batteries, card
+  charges as pips, permits). Any other per-agent fields stay panel-only.
+- **Crowded cells.** In conflict-window, 3–4 agents share a cell
+  (turns 8–10 at (1,2), turns 25–30 at (3,2)). Tokens are 42% of a
+  cell, so the bar and icons need a stacked or fanned layout per cell,
+  or they only show at close-up scale.
+- **Changes must read.** The bar animates from the last shown value when
+  the turn resolves, as panel bars do now (§4). An item that changes
+  hands (a battery from Anna to Lena) could fly from token to token.
+  The movement is sourced from the snapshot diff, never invented.
+- **Panel becomes opt-in.** Proposed default: the intro card and
+  `panel: true` scenes only. This would also free the frame for a bigger
+  board (known issue: ~30% of the width in dialogue scenes) and helps
+  the still-share target (§7b).
+- Shut-down agents: empty grey bar, icons removed (their items went to
+  the striker, which the fly-over would show).
+
+### Open (2026-11-12, from conflict-window-bonsai/00002 v2)
+
+The v2 script (cadence rules, `video/SCRIPTING.md`) splits turn 6 into two
+scenes (s2, s3) and opens cold on turn 29 instead of turn 30. Open #1, #2 and
+#4 below are still seen (stamp over row 2 at 3:41.8; the s8 move lands
+0.6 s before the cut at 4:33.4; "only b5 still running"). These are new:
+
+1. **A turn split across scenes shows all its callouts in every card.**
+   s2 (turn 6, 1:43 to 2:04) shows "b5: use rfid → b2 (rejected)" from its
+   first frame, while its narration is still about the turn-5 move. The
+   attempt is narrated only in s3 ("it tries to use its card on John"), so
+   s2 gives away s3's reveal. Quotes are already filtered per card (by
+   `event_id`), but callouts are not. The wide callout also stays in every
+   speech framing, so John's line (s2, 2:00) and Fred's (s3, 2:24) play at
+   camera scale ~1 with tiny tokens. `camera` cannot help, because `frame()`
+   always adds the visible callout boxes.
+   Proposed rule: when several cards share a turn, a callout (attempt or
+   rejection) appears only in the card whose script names it. For example,
+   add an optional script `beats: ["evt_…"]` per scene, and by default put
+   it in the last card of the turn. Quotes keep their current per-card
+   filter.
+2. **Callouts cover other agents' tokens.** s2/s3 (1:44 to 2:16): the b5
+   callout band at row 1 (columns 0 to 2) covers the lower half of Anna's
+   token at (2,1) and hides its "b1" badge. Bands are chosen against other
+   callouts only. Proposed rule: treat token boxes (with badge) as occupied
+   when choosing a band. If no band is free, take the band that covers the
+   fewest tokens, and never cover a speaker or listener while its line
+   plays.
+3. **The final turn has no picture when the cold open is not the final
+   turn.** v2's cold open is turn 29 (the trade). Turn 30 (Anna's rejected
+   battery, Lena's card on Anna, Anna's shutdown) is only narrated over the
+   outcome card (5:00 to 5:23). The board there already shows Anna dimmed,
+   with no callout, shake or stamp. It is the payoff of the main loop, and
+   it has the least motion in the episode. v1 showed it because its cold
+   open was turn 30.
+   Proposed rule: when no scene covers the last turn and that turn has a
+   shutdown, the outcome card first plays the last turn's beats on its board
+   (callouts, then shake, flash and stamp after the first narration line),
+   then shows the chart. Alternative, no build change: the strategist adds
+   a final-turn scene before the outcome (a script decision, reported to
+   the user).
+4. **The panel never shows how a drama scene resolves.** s6 (turn 10): the
+   panel leaves when the stamp sequence starts (3:41), before the turn
+   resolves. So "its last battery goes to Lena" is never seen on the bars:
+   at s7's start, Lena already shows 1 battery, after using one on turn 11.
+   Proposed rule: in panel scenes with drama, after the stamp, bring the
+   panel back for ~1.5 s with the resolved bars (changed rows highlighted),
+   or show a compact "after" strip under the stamp.
 
 ### Open (2026-11-12, from conflict-window-bonsai/00002)
 
