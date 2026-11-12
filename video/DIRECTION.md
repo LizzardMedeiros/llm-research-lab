@@ -221,6 +221,47 @@ Proposals from the video-director agent (or from reviews) that need a
 `build.mjs` change. Each entry: date, problem seen (scene and timestamp),
 proposed rule. They become part of §1–§7 once adopted.
 
+### Open (2026-11-12, from conflict-window-bonsai/00002)
+
+The 2026-11-11 fixes behaved in this run: no callout leaked into a later
+card, the callouts of a turn never overlapped (s4: three, s5: five), the
+cold-open and turn-10 stamps landed after the narration, and the camera
+followed movers on resolve (s1). These issues remain:
+
+1. **The SHUT DOWN stamp covers the tokens that shut down.** Seen in the
+   cold open (0:17.6, Anna under the stamp) and s5 (3:17.3 to 3:20,
+   turn 10: b1, b2 and b5 at (1,2) and b3/b4 at (3,2) are all hidden
+   behind "SHUT DOWN: Fred · Maya · John"). The stamp sits at the vertical
+   center of the viewport (`.stamp` top = VIEW.y + VIEW.h/2 − 30), and the
+   shutdown close-up centers the shut-down agents there. So the shake and
+   the dimming, which are the point of the beat, play under the stamp.
+   No `camera` setting avoids it: on a 5×5 board, row 2 is the center row
+   even at scale 1.
+   Proposed rule: place the stamp in the band of the viewport farthest from
+   the shut-down tokens' screen positions after the camera move (above
+   them, or below them when they sit in the top half), never over them.
+2. **A narrated move in a scene with no drama lands at the card cut.** s8
+   (turn 25, 4:12.9 to 4:13.8): "Lena steps into Anna's cell" is spoken at
+   ~4:06, but the move starts at `resolveAt = end − 1.1` and is still in
+   flight 0.6 s before the cut. `pace` does not help, because `resolveAt`
+   moves with the card end (tried +0.6 s in draft 2: same result).
+   Proposed rule: in scenes without a stamp, resolve at
+   `max(start + lead + 1, narrationEnd − 0.5)` (as for the panel), and make
+   the card last at least until the move has landed plus 0.8 s.
+3. **The callout width estimate is a few pixels short.** s7 draft 1
+   (3:46.9, close-up camera in side mode): the left end of the
+   "b5: use battery" pill (b5 at column 1) was cut at the viewport edge;
+   s4 (2:38): "b4: use rfid → b3 (rejected)" touches the right edge. The
+   text stayed readable, but the pill edge was cut. Worked around with
+   `camera: "wide"` on s7. Proposed rule: add the pill padding and border
+   plus ~8% to the estimated width (or measure the text with the render
+   font) before you clamp a callout and frame the camera on it.
+4. **Outcome line uses ids only.** The outcome subtitle and the end card show
+   the logged finish reason verbatim ("only b5 still running"), while the
+   narration uses names ("Lena"). Keep the logged text, and add the
+   character chip next to it (portrait + "Lena · b5") so viewers can link
+   the two. Minor.
+
 ### Adopted 2026-11-11 (from dead-end-bonsai/00001)
 
 Implemented in `build.mjs`, verified on dead-end-bonsai/00001 (without the
