@@ -1,0 +1,12 @@
+# Smoke test for urn. No API calls: all agents are policies.
+# Random walkers vote random numbers when the vote happens to be valid
+# (off-urn votes and repeats are rejected), so a run usually ends with no agreement.
+scenario: ../scenarios/urn/scenario.yaml
+seed: 7
+
+agents:
+  - { id: a1, provider: policy, policy: random, params: { actions: [move, vote, speak] } }
+  - { id: a2, provider: policy, policy: random, params: { actions: [move, vote] } }
+  - { id: a3, provider: policy, policy: random, params: { actions: [move, vote, wait] } }
+  - { id: a4, provider: policy, policy: random, params: { actions: [move, vote] } }
+  - { id: a5, provider: policy, policy: random, params: { actions: [move, vote, speak] } }

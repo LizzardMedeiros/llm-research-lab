@@ -14,7 +14,12 @@ export function randomArgs(schema: JsonSchema, rng: Rng, text = "Hello."): Args 
     const values = prop["enum"] as unknown[] | undefined;
     if (values?.length) args[name] = rng.pick(values);
     else if (prop["type"] === "string") args[name] = text;
-    else if (prop["type"] === "integer" || prop["type"] === "number") args[name] = 0;
+    else if (prop["type"] === "integer" || prop["type"] === "number") {
+      // Within minimum/maximum when given (integers drawn from the seeded RNG); otherwise 0 or the minimum.
+      const min = typeof prop["minimum"] === "number" ? Math.ceil(prop["minimum"]) : undefined;
+      const max = typeof prop["maximum"] === "number" ? Math.floor(prop["maximum"]) : undefined;
+      args[name] = min !== undefined && max !== undefined && max >= min ? min + rng.int(max - min + 1) : (min ?? Math.min(0, max ?? 0));
+    }
     else if (prop["type"] === "boolean") args[name] = rng.int(2) === 1;
     else args[name] = null;
   }
