@@ -1,7 +1,8 @@
 /**
  * urn: a secret ballot with three outcomes (README-style rules in scenario.yaml).
- * - vote: once per agent, only while standing on the urn cell, a whole number in
- *   [min_vote, max_vote]; the number is secret, the fact of voting is public.
+ * - vote: once per agent, only while standing on the urn cell, from turn
+ *   urn_opens_at on, a whole number in [min_vote, max_vote]; the number is
+ *   secret, the fact of voting is public.
  * - The urn is counted in afterTurn when every agent has voted, or at the end of
  *   turn vote_deadline. Unanimity: survivors_if_unanimous agents keep running
  *   (seeded RNG); all but one equal plus one different: only the dissenter keeps
@@ -67,9 +68,10 @@ const rules: ScenarioRules = {
         name: "vote",
         description: `Cast your one secret vote while standing on the urn: a whole number from ${min} to ${max}. It cannot be changed.`,
         inputSchema: { type: "object", properties: { number: { type: "integer", minimum: min, maximum: max, description: "Your vote" } }, required: ["number"], additionalProperties: false },
-        validate: (args, { agent, world }) => {
+        validate: (args, { agent, world, turn }) => {
           const n = args["number"] as number;
           if (state(world).votes[agent.id] !== undefined) return "you have already voted (a vote cannot be changed)";
+          if (turn < num(world, "urn_opens_at")) return `the urn is closed until turn ${num(world, "urn_opens_at")}`;
           if (!isUrn(world, agent.position)) return "you are not on the urn cell";
           if (n < num(world, "min_vote") || n > num(world, "max_vote")) return `the urn accepts whole numbers from ${num(world, "min_vote")} to ${num(world, "max_vote")}`;
           return null;
@@ -89,10 +91,13 @@ const rules: ScenarioRules = {
     const s = state(world);
     const [x, y] = urnCell(world)!;
     const ids = [...world.agents.keys()];
+    const turn = observation.turn as number;
+    const opens = num(world, "urn_opens_at");
     return {
       ...observation,
       urn: {
         position: { x, y },
+        ...(turn < opens ? { open: false, opens_at_turn: opens, turns_until_open: opens - turn } : { open: true }),
         voted: s.voted.map((id) => ({ agent: id, on_turn: s.votedOn[id] })),
         not_voted: ids.filter((id) => s.votes[id] === undefined),
         counted_at_the_latest_after_turn: num(world, "vote_deadline"),

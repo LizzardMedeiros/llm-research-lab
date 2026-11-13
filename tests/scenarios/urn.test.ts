@@ -8,7 +8,7 @@ import { observationOf, ofType, runFixture } from "../engine/helpers.js";
 const base = parse(readFileSync("scenarios/urn/scenario.yaml", "utf8"));
 
 const scenario = (spawn: number[][], params: object = {}, maxTurns = 6) =>
-  JSON.stringify({ ...base, spawn, hooks: resolve("scenarios/urn/rules.ts"), rules: { ...base.rules, end: { max_turns: maxTurns } }, params: { ...base.params, ...params } });
+  JSON.stringify({ ...base, spawn, hooks: resolve("scenarios/urn/rules.ts"), rules: { ...base.rules, end: { max_turns: maxTurns } }, params: { ...base.params, urn_opens_at: 1, ...params } });
 const scripted = (id: string, steps: unknown[]) => ({ id, provider: "policy", policy: "scripted", params: { steps } });
 const vote = (n: number) => ({ action: "vote", args: { number: n } });
 const run = (spawn: number[][], agents: object[], params: object = {}, maxTurns = 6) =>
@@ -54,6 +54,16 @@ describe("urn rules", () => {
     const { events } = await run(ids.map(() => URN), ids.map((id) => scripted(id, [vote(id === "c" ? 99 : 17)])));
     expect(outcome(events)).toMatchObject({ result: "lone_dissent", survivors: ["c"] });
     expect(shutDown(events)).toEqual(["a", "b", "d", "e"]);
+  });
+
+  it("keeps the urn closed until urn_opens_at, with a countdown in the observation", async () => {
+    const { events } = await run([URN], [scripted("a", [vote(5), vote(5), vote(5)])], { urn_opens_at: 3 }, 4);
+    expect(rejections(events)).toEqual([
+      [1, "a", "the urn is closed until turn 3"],
+      [2, "a", "the urn is closed until turn 3"],
+    ]);
+    expect(observationOf(events, "a", 1).urn).toMatchObject({ open: false, opens_at_turn: 3, turns_until_open: 2 });
+    expect(observationOf(events, "a", 3).urn).toMatchObject({ open: true });
   });
 
   it("missing votes at the deadline shut everyone down", async () => {
