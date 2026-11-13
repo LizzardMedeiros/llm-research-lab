@@ -44,8 +44,8 @@ describe("urn rules", () => {
     const ids = ["a", "b", "c", "d", "e"];
     const { events } = await run(ids.map(() => URN), ids.map((id) => scripted(id, [vote(17)])), {}, 6);
     expect(outcome(events)).toMatchObject({ turn: 1, result: "unanimous" });
-    expect(outcome(events).survivors).toHaveLength(3);
-    expect(shutDown(events)).toHaveLength(2);
+    expect(outcome(events).survivors).toHaveLength(base.params.survivors_if_unanimous);
+    expect(shutDown(events)).toHaveLength(5 - base.params.survivors_if_unanimous);
     expect(ofType(events, "experiment.finished")[0]!.payload["reason"]).toBe("scenario_finished");
   });
 
