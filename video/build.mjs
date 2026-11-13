@@ -73,6 +73,7 @@ const plan = isScript
       state: sc.state,
       narration: sc.narration,
       quotes: sc.quotes,
+      notes: sc.notes ?? [],
     }))
   : [
       { id: "intro", kind: "intro", turn: 0, state: input.intro, narration: [input.intro.narration || input.scenario.description], quotes: [] },
@@ -82,6 +83,7 @@ const plan = isScript
         turn: sc.turn,
         state: sc,
         narration: [sc.narration ?? `Turn ${sc.turn}.`],
+        notes: [],
         quotes: sc.beats.filter((b) => b.kind === "speech" && b.heardBy.length).slice(0, 2).map((b) => ({ event_id: b.eventId, agent: b.agent, text: b.text, heardBy: b.heardBy })),
       })),
       { id: "outcome", kind: "outcome", turn: input.outcome.turn, state: input.scenes.at(-1) ?? input.intro, narration: [input.outcome.text], quotes: [] },
@@ -158,12 +160,18 @@ function spokenPart(text) {
   return end > 60 ? cut.slice(0, end + 1) : `${cut.slice(0, cut.lastIndexOf(" "))}…`;
 }
 
-/** Synthesizes (cached by voice + text) and returns { src, duration }. */
-function tts(text, voiceId) {
-  const hash = createHash("sha1").update(`${voiceId}|${text}`).digest("hex").slice(0, 12);
+// Agent notes (model-reported, nobody heard them) use the agent's voice as an "inner voice":
+// band-limited, a touch softer, with a light hall (SCRIPTING.md, approved 2026-11-13).
+const INNER_VOICE = "highpass=f=130,lowpass=f=5800,volume=0.9,aecho=0.8:0.85:50|95|150:0.26|0.18|0.1,apad=pad_dur=0.45";
+
+/** Synthesizes (cached by voice + text + effect) and returns { src, duration }. */
+function tts(text, voiceId, effect) {
+  const hash = createHash("sha1").update(`${voiceId}|${text}${effect ? `|${effect}` : ""}`).digest("hex").slice(0, 12);
   const file = join(audioDir, `${hash}.wav`);
   if (!existsSync(file)) {
-    execFileSync("npx", ["--prefix", "/video", "hyperframes", "tts", text, "--voice", voiceId, "--speed", "1.1", "--output", file], { stdio: "ignore" });
+    const dry = effect ? join(audioDir, `${hash}.dry.wav`) : file;
+    execFileSync("npx", ["--prefix", "/video", "hyperframes", "tts", text, "--voice", voiceId, "--speed", "1.1", "--output", dry], { stdio: "ignore" });
+    if (effect) execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y", "-i", dry, "-af", effect, file]);
   }
   const duration = Number(execFileSync("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", file]).toString().trim());
   return { src: `audio/${basename(file)}`, duration };
@@ -182,7 +190,7 @@ function addCard(card, lines) {
   const lead = SCENE_LIKE.has(card.kind) ? (card.direction.transition === "cut" ? 0.4 : WIPE) : 0.5;
   let cursor = start + lead;
   for (const line of lines) {
-    const audio = tts(line.spoken ?? line.text, line.voice);
+    const audio = tts(line.spoken ?? line.text, line.voice, line.effect);
     clips.push({ ...line, ...audio, start: cursor });
     cursor += audio.duration + GAP;
   }
@@ -204,8 +212,17 @@ for (const item of plan) {
     : item.state;
   // The Observer introduces itself (and the AI-agents disclosure) before the episode's own intro.
   const greeting = item.kind === "intro" ? SERIES.narrator.greeting : [];
+  // Notes play after the narration line they name (`after`), or after all narration; quotes last.
+  const noteLine = (n) => ({ role: "note", agent: n.agent, source: n.source, text: n.text, spoken: n.text.replace(/\s*\[…\]\s*/g, " ... ").trim(), voice: voice(n.agent), effect: INNER_VOICE });
+  const notes = item.notes ?? [];
+  const lines = greeting.map((text) => ({ role: "narration", text, voice: NARRATOR_VOICE }));
+  item.narration.forEach((text, i) => {
+    lines.push({ role: "narration", text, voice: NARRATOR_VOICE });
+    for (const n of notes.filter((n) => n.after === i)) lines.push(noteLine(n));
+  });
+  for (const n of notes.filter((n) => n.after === undefined)) lines.push(noteLine(n));
   addCard({ id: item.id, kind: item.kind, turn: item.turn, flashback: item.flashback, focus: item.focus, scene, direction: directionOf(item.id) }, [
-    ...[...greeting, ...item.narration].map((text) => ({ role: "narration", text, voice: NARRATOR_VOICE })),
+    ...lines,
     ...item.quotes.map((q) => ({ role: "speech", agent: q.agent, heardBy: q.heardBy, text: q.text, spoken: spokenPart(q.text), voice: voice(q.agent) })),
   ]);
 }
@@ -323,6 +340,8 @@ const callouts = []; // per-card callout elements (inside the camera; screen-spa
 const moves3d = Object.fromEntries(ids.map((id) => [id, []])); // [t0, duration, from u, v, to u, v] in cell units
 const lastCenter = {};
 const speeches3d = []; // [start, end, speaker, listeners] for every dialogue line
+const notes3d = []; // [start, end, agent] for every agent note (inner voice)
+const toastEnds = []; // per toast slot: when it frees up (3D action toasts)
 const strikes3d = []; // [raise, zap, end, actor, target, hit] for every logged taser use
 const charges3d = Object.fromEntries(ids.map((id) => [id, []])); // [t, charges] steps
 const logMove = (id, c, at, duration) => {
@@ -449,7 +468,7 @@ const cardHtml = cards
         html += statsPanel(card, i, prevStats, panelResolveAt);
         prevStats = card.scene.stats;
         tl.push(`tl.to("#viewport", {...${JSON.stringify(SIDE)}, duration:0.6, ease:"power2.inOut"}, ${f(card.start + 0.3)});`);
-        const hasDrama = card.clips.some((c) => c.role === "speech") || card.scene.beats.some((b) => b.kind === "shutdown");
+        const hasDrama = card.clips.some((c) => c.role === "speech" || c.role === "note") || card.scene.beats.some((b) => b.kind === "shutdown");
         if (hasDrama) {
           tl.push(`tl.to("#panel${i}", {opacity:0, x:60, duration:0.45, ease:"power2.in"}, ${f(dramaAt - 0.1)});`);
           tl.push(`tl.to("#viewport", {...${JSON.stringify(STAGE)}, duration:0.8, ease:"power2.inOut"}, ${f(dramaAt)});`);
@@ -459,7 +478,7 @@ const cardHtml = cards
       }
       card.panel = panel;
       card.dramaAt = dramaAt;
-      card.hasDrama = card.clips.some((c) => c.role === "speech") || card.scene.beats.some((b) => b.kind === "shutdown");
+      card.hasDrama = card.clips.some((c) => c.role === "speech" || c.role === "note") || card.scene.beats.some((b) => b.kind === "shutdown");
 
       // Callouts for scenario actions: above the acting agent's cell (below on the top
       // row), each in the nearest free band so no two callouts of the turn overlap,
@@ -487,18 +506,30 @@ const cardHtml = cards
         const topIn = candidates.find((t) => !overlaps(left, t, w)) ?? candidates[0] ?? 2;
         placed.push([left, topIn, w]);
         if (WORLD3D) {
-          // Screen-space: world3d.js places it above the actor's spot, stacked per cell.
-          const k3 = card.callouts.filter((o) => o.cell === `${cx},${cy}`).length;
-          callouts.push(`<div class="callout callout3d${rejected ? " rejected" : ""}" id="${id}" data-u="${f(cx + 0.5)}" data-v="${f(cy + 0.5)}" data-k="${k3}" data-w="${f(w)}" style="width:${f(w - 16)}px">${esc(text)}</div>`);
+          // 3D: no callout over the board (the rats act it out). A discreet toast at the side keeps
+          // the logged action, with the actor's portrait and, for a rejected attempt, the logged reason.
+          const pop3 = card.start + card.lead + k * 0.25;
+          const hide3 = Math.min(end - 0.1, pop3 + 4);
+          let slot = toastEnds.findIndex((e) => e <= pop3);
+          if (slot < 0) slot = toastEnds.length;
+          toastEnds[slot] = hide3 + 0.3;
+          const targetNames = Object.values(b.args).filter((v) => typeof v === "string").map((v) => (ids.includes(v) ? nameOf(v) : v)).join(", ");
+          // Top-right in stage scenes; bottom-right while the panel fills the right column.
+          const where = card.panel ? `bottom:${70 + slot * 58}px` : `top:${86 + slot * 58}px`;
+          callouts.push(`<div class="toast${rejected ? " rejected" : ""}" id="${id}" style="${where}"><span class="mini">${portrait(b.agent, "neutral", 30)}</span><div><div class="tt"><b style="background:${color(b.agent)}">${esc(shortName(b.agent))}</b> ${esc(b.action.replace(/_/g, " "))}${targetNames ? ` → ${esc(targetNames)}` : ""}${rejected ? ' <span class="rj">rejected</span>' : ""}</div>${rejected && b.reason ? `<div class="why">${esc(b.reason)}</div>` : ""}</div></div>`);
+          tl.push(`tl.fromTo("#${id}", {opacity:0, x:40}, {opacity:1, x:0, duration:0.35, ease:"power2.out"}, ${f(pop3)});`);
+          tl.push(`tl.to("#${id}", {opacity:0, x:20, duration:0.35}, ${f(hide3)});`);
+          sfx.push([pop3, rejected ? "rejected" : "action"]);
+          if (isStrike(b) && typeof b.args.target === "string") {
+            const zapAt = rejected ? pop3 + 0.45 : card.resolveAt - 0.8;
+            const raiseAt = rejected ? pop3 : card.resolveAt - STRIKE_LEAD;
+            strikes3d.push([Number(f(raiseAt)), Number(f(zapAt)), Number(f(rejected ? zapAt + 0.3 : card.resolveAt + 0.1)), b.agent, b.args.target, !rejected]);
+          }
+          return;
         } else {
           callouts.push(`<div class="callout${rejected ? " rejected" : ""}" id="${id}" style="left:${f(left)}px;top:${f(topIn)}px;width:${f(w - 16)}px">${esc(text)}</div>`);
         }
         const pop = card.start + card.lead + k * 0.25;
-        if (isStrike(b) && typeof b.args.target === "string") {
-          const zapAt = rejected ? pop + 0.45 : (card.resolveAt - 0.8);
-          const raiseAt = rejected ? pop : card.resolveAt - STRIKE_LEAD;
-          strikes3d.push([Number(f(raiseAt)), Number(f(zapAt)), Number(f(rejected ? zapAt + 0.3 : card.resolveAt + 0.1)), b.agent, b.args.target, !rejected]);
-        }
         // Hide after the turn resolves, but never before it has been readable (and never after the card).
         const hide = Math.min(end - 0.1, Math.max(pop + 1.5, Math.min(end - 0.4, card.resolveAt - 0.1)));
         if (!(hide > pop)) throw new Error(`callout ${id} (${text}) would hide at ${f(hide)} before it pops at ${f(pop)}`);
@@ -617,6 +648,21 @@ const cardHtml = cards
         const leave = card.panel && card.hasDrama ? Math.min(until, card.dramaAt) - 0.15 : until - 0.1;
         const nextIsNarration = card.clips[j + 1]?.role === "narration";
         if (SCENE_LIKE.has(card.kind) || nextIsNarration) tl.push(`tl.to("#${id}", {opacity:0, duration:0.3}, ${f(nextIsNarration ? until - 0.1 : leave)});`);
+        return;
+      }
+      if (c.role === "note") {
+        // An agent note: what it wrote for itself (model-reported), heard by nobody. A thought box,
+        // not the dialogue box, and the agent's voice as an inner voice.
+        const label = c.source === "reasoning" ? "reasoning · model-reported" : "wrote · model-reported";
+        html += `<div class="note" id="${id}" style="border-color:${color(c.agent)}">
+          <div class="speaker">${portrait(c.agent, expressionOf(c.agent, card.scene?.before ?? card.scene), 64)}</div>
+          <div class="who"><b style="background:${color(c.agent)}">${esc(nameOf(c.agent))}</b> <span>${label} · nobody heard this</span></div>
+          <div class="quote">${esc(c.text)}</div></div>`;
+        tl.push(`tl.fromTo("#${id}", {opacity:0, y:30}, {opacity:1, y:0, duration:0.4, ease:"power3.out"}, ${f(c.start - 0.1)});`);
+        tl.push(`tl.to("#${id}", {opacity:0, y:12, duration:0.3}, ${f(until - 0.15)});`);
+        const at = startCenters[c.agent];
+        if (closeUps && at) tl.push(`tl.to("#camera", {...${JSON.stringify(card.frame([at], c.start - 0.2))}, duration:0.7, ease:"power2.inOut"}, ${f(c.start - 0.2)});`);
+        notes3d.push([Number(f(c.start)), Number(f(until - 0.2)), c.agent]);
         return;
       }
       html += `<div class="dialogue" id="${id}">
@@ -749,6 +795,11 @@ const html = `<!doctype html>
   .dialogue { position:absolute; left:40px; right:40px; top:${f(STAGE_BOTTOM + 14)}px; min-height:96px; background:#f5f1e6; color:#1d2330; border-radius:14px; padding:14px 20px 14px 70px; opacity:0; z-index:5; box-shadow:0 6px 24px #000a; }
   .dialogue .who { font-size:15px; margin-bottom:6px; color:#59606e; }
   .dialogue .quote { font-size:21px; line-height:1.35; }
+  .note { position:absolute; left:40px; right:40px; top:${f(STAGE_BOTTOM + 14)}px; min-height:96px; background:#161d29f0; color:#e8ecf3; border:2px dashed; border-radius:14px; padding:14px 20px 14px 70px; opacity:0; z-index:5; box-shadow:0 6px 24px #000a; }
+  .note .speaker { position:absolute; left:-14px; top:-22px; border-radius:50%; box-shadow:0 4px 14px #0009; }
+  .note .speaker svg { display:block; border-radius:50%; }
+  .note .who { font-size:15px; margin-bottom:6px; color:#9aa2b4; }
+  .note .quote { font-size:20px; line-height:1.35; font-style:italic; color:#cfd6e4; }
   .flash { position:absolute; inset:0; background:#ff3b30; opacity:0; z-index:8; }
   .stamp { position:absolute; left:${VIEW.x + 20}px; top:${VIEW.y + VIEW.h / 2 - 30}px; width:${VIEW.w - 40}px; text-align:center; font-size:30px; font-weight:900; color:#ff6b60; border:4px solid #ff6b60; border-radius:10px; padding:6px 0; background:#0e1117cc; opacity:0; z-index:6; }
   .chart { position:absolute; left:460px; top:240px; width:760px; display:grid; gap:12px; }
@@ -774,6 +825,13 @@ ${WORLD3D ? `  #gl { position:absolute; left:0; top:0; width:${W}px; height:${H}
   .w3d #camera { opacity:0; } /* the 2D puppet stays rendered (its SVG defs are shared with portraits) but invisible */
   .callout3d { position:absolute; left:0; top:0; z-index:3; }
   .tags3d { position:absolute; inset:0; z-index:1; pointer-events:none; }
+  .toast { position:absolute; right:24px; z-index:4; display:flex; gap:8px; align-items:center; max-width:360px; background:#161d29d9; border:1px solid #263044; border-radius:10px; padding:5px 10px 5px 6px; opacity:0; font-size:12px; color:#cfd6e4; box-shadow:0 3px 10px #0008; }
+  .toast .mini { margin:0; }
+  .toast b { color:#fff; border-radius:5px; padding:0 5px; }
+  .toast .rj { font-size:10px; letter-spacing:1px; text-transform:uppercase; color:#1d2330; background:#9aa2b4; border-radius:4px; padding:0 4px; margin-left:4px; }
+  .toast .why { font-size:11px; color:#8b93a5; margin-top:2px; }
+  .toast.rejected { opacity:0; border-color:#3a4254; }
+  .think3d { position:absolute; transform:translate(-50%, -100%); font-size:14px; font-weight:900; letter-spacing:2px; color:#1d2330; background:#e8ecf3; border-radius:12px; padding:0 8px; opacity:0; box-shadow:0 2px 6px #0008; }
   .gloss3d { position:absolute; right:40px; bottom:34px; z-index:10; font-size:13px; color:#cfd6e4; background:#161d29e6; border:1px solid #263044; border-radius:8px; padding:4px 10px; opacity:0; }
   .tag3d { position:absolute; transform:translate(-50%, -100%); font-size:11px; font-weight:700; color:#fff; border-radius:6px; padding:1px 6px; white-space:nowrap; box-shadow:0 1px 4px #0008; opacity:0; }
 ` : ""}  .footer { position:absolute; left:40px; right:40px; bottom:14px; font-size:12px; color:#6b7385; z-index:10; }
@@ -814,6 +872,7 @@ ${WORLD3D ? `<script type="module">
     agents: ids.map((id) => ({ id, name: nameOf(id), color: color(id), feminine: member(id).presentation === "feminine" })),
     moves: moves3d,
     speeches: speeches3d,
+    notes: notes3d,
     ...(TASER ? { taser: { strikes: strikes3d, charges: charges3d, max: Math.max(1, statMax[TASER.field] ?? 1) } } : {}),
   })});
   // Draw from timeline time: bring the 2D puppet to t, then read it.

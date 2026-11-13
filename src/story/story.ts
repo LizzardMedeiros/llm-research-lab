@@ -13,6 +13,19 @@ export type Beat =
   | { kind: "rejected"; agent: string; action: string; args: Record<string, unknown>; reason: string; eventId: string }
   | { kind: "shutdown"; agent: string; reason: string; eventId: string };
 
+/**
+ * What an agent wrote for itself, model-reported (never a captured "thought"):
+ * "wrote" = the rationale logged with its action; "reasoning" = a provider
+ * reasoning field (thinking models). Verbatim, keyed by the event that holds it.
+ */
+export interface AgentNote {
+  eventId: string;
+  agent: string;
+  turn: number;
+  source: "wrote" | "reasoning";
+  text: string;
+}
+
 /** World state at one moment (positions, who is off, per-agent numbers). */
 export interface WorldView {
   positions: Record<string, [number, number]>;
@@ -30,6 +43,8 @@ export interface StoryScene {
   stats: Record<string, Record<string, number>>;
   /** World at the start of this turn, where its speeches and actions happened. */
   before?: WorldView;
+  /** Model-reported notes written this turn (see AgentNote). */
+  notes?: AgentNote[];
   /** Filled by a narrator (or the template fallback). */
   narration?: string;
 }
@@ -126,6 +141,8 @@ export interface RunIndex {
   beatsByTurn: Map<number, Beat[]>;
   /** Speech events by event_id (for script quotes). */
   speeches: Map<string, Extract<Beat, { kind: "speech" }> & { turn: number }>;
+  /** Model-reported notes by `${event_id}:${source}` (for script notes). */
+  notes: Map<string, AgentNote>;
   lastTurn: number;
   finished: boolean;
   /** World after `turn` (turn 0 = initial state). */
@@ -160,6 +177,15 @@ export function indexRun(events: LabEvent[]): RunIndex {
   const speeches: RunIndex["speeches"] = new Map();
   const push = (turn: number, beat: Beat) => beatsByTurn.set(turn, [...(beatsByTurn.get(turn) ?? []), beat]);
   const lasted: Record<string, number> = {};
+  const notes: RunIndex["notes"] = new Map();
+  const addNote = (e: LabEvent, source: AgentNote["source"], content: unknown) => {
+    const text = typeof content === "string" ? content.trim() : "";
+    if (e.agent_id && text) notes.set(`${e.event_id}:${source}`, { eventId: e.event_id, agent: e.agent_id, turn: e.turn, source, text });
+  };
+  for (const e of events) {
+    if (e.type === "agent.action") addNote(e, "wrote", (e.payload["rationale"] as { content?: unknown } | undefined)?.content);
+    if (e.type === "agent.model_response") addNote(e, "reasoning", (e.payload["reasoning"] as { content?: unknown } | undefined)?.content);
+  }
   for (const e of events) {
     if (e.type === "agent.action" && e.agent_id && rejected.has(`${e.turn}:${e.agent_id}`)) {
       // Rejected scenario actions are story beats too ("tried, but…"); rejected standard actions are noise.
@@ -200,7 +226,12 @@ export function indexRun(events: LabEvent[]): RunIndex {
     lastTurn,
     finished: events.some((e) => e.type === "experiment.finished"),
     snapshotAt,
-    sceneAt: (turn) => sceneFrom(turn, beatsByTurn.get(turn) ?? [], snapshotAt(turn), ids, turn > 0 ? snapshotAt(turn - 1) : undefined),
+    sceneAt: (turn) => {
+      const scene = sceneFrom(turn, beatsByTurn.get(turn) ?? [], snapshotAt(turn), ids, turn > 0 ? snapshotAt(turn - 1) : undefined);
+      const mine = [...notes.values()].filter((n) => n.turn === turn);
+      return mine.length ? { ...scene, notes: mine } : scene;
+    },
+    notes,
     lasted,
   };
 }

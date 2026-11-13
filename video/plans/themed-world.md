@@ -265,6 +265,14 @@ The rules below apply to every stage:
     callout boxes. That fixes the wide-only speech shots of turn 6.
   - It ties to the principle "simulation leads, not narration"
     (`video/SCRIPTING.md` §0).
+  - Implemented 2026-11-13, 3D only:
+    - each card shows the actor's rat portrait, its name, the logged
+      action, the target names, and REJECTED plus the logged reason;
+    - toasts sit top-right in stage scenes and bottom-right while the
+      panel fills the right column;
+    - they stay 4 s (capped at the card end) and stack in time slots;
+    - camera framings no longer include callout boxes: the turn-6 speeches
+      are now close-ups.
 - **Deferred (user):** crowded cells. Several rats in one cell get a
   simple layout for now and are improved later.
 - **Gate:** the reference run needs the panel only where the director

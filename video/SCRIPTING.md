@@ -159,7 +159,20 @@ Turn 10:
     chain on the TTS output is:
     `highpass=f=130,lowpass=f=5800,volume=0.9,aecho=0.8:0.85:50|95|150:0.26|0.18|0.1,apad=pad_dur=0.45`.
     Stronger halls (4–5 echoes up to 460 ms) sounded too distant.
-  Not implemented yet: script schema (`notes` by `event_id` with an
-  excerpt span), `script:check`/`facts.md`, the thought bubble (2D and over
-  the 3D rat), the voice chain in `build.mjs`, and strategist rules
-  (e.g. narrator ≤ ~60% of voiced time).
+- 2026-11-13, **agent notes implemented**:
+  - Lab side: `RunIndex.notes` reads the action `rationale` ("wrote") and
+    the provider `reasoning` field. Script scenes take
+    `notes: [{event_id, source?, excerpt?, after?}]`.
+  - `script:check` rejects typed or unknown notes, wrong turns and
+    excerpts that are not verbatim (or out of order). Notes longer than
+    300 characters need an excerpt. `facts.md` lists them as NOTE lines,
+    with a CHECK reminder that they are not facts.
+  - Video side: the note plays in the agent's voice with the approved
+    hall, in a dark dashed box labeled "wrote · model-reported · nobody
+    heard this". The camera closes on the author. In 3D the rat gets a
+    "…" bubble and a head tilt.
+  - The content-strategist knows the schema and the ≤ ~60% narrator
+    target.
+  - Technical test: the approved v2 script, narration unchanged, plus four
+    notes. Narrator share 95.2% → 86.5% (notes 28.9 s). Reaching ≤ 60%
+    needs a script rewritten for it (a v3, through the approval gate).

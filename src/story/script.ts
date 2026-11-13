@@ -19,6 +19,25 @@ const SceneSchema = z
     narration: z.array(z.string().trim().min(1).max(400)).max(5).default([]),
     /** Dialogue: references to speak events, shown and voiced verbatim. */
     quotes: z.array(z.object({ event_id: z.string() }).strict()).max(3).default([]),
+    /**
+     * Agent notes: what an agent wrote for itself (model-reported), voiced as an
+     * "inner voice". Verbatim by event_id; `excerpt` picks exact fragments of the
+     * text, in order (cuts are shown as "[…]"); `after` plays it after that
+     * narration line (default: after all narration, before the quotes).
+     */
+    notes: z
+      .array(
+        z
+          .object({
+            event_id: z.string(),
+            source: z.enum(["wrote", "reasoning"]).default("wrote"),
+            excerpt: z.array(z.string().min(3)).min(1).max(4).optional(),
+            after: z.number().int().min(0).optional(),
+          })
+          .strict(),
+      )
+      .max(3)
+      .default([]),
     /** Agents the camera should favor in this scene (optional hint for the director). */
     focus: z.array(z.string()).optional(),
   })
@@ -48,6 +67,39 @@ export interface ResolvedQuote {
   heardBy: string[];
 }
 
+export interface ResolvedNote {
+  event_id: string;
+  agent: string;
+  source: "wrote" | "reasoning";
+  /** Verbatim text, or verbatim fragments joined with "[…]" marks. */
+  text: string;
+  after?: number;
+}
+
+/** Longest note voiced whole; longer ones need an excerpt. */
+export const NOTE_MAX_CHARS = 300;
+
+/** Joins verbatim fragments of `full` with cut marks, or explains why they are not verbatim. */
+export function excerptOf(full: string, fragments: string[] | undefined): { text: string } | { error: string } {
+  if (!fragments) return full.length <= NOTE_MAX_CHARS ? { text: full } : { error: `the note is ${full.length} characters (max ${NOTE_MAX_CHARS} whole): use "excerpt"` };
+  let from = 0;
+  const parts: string[] = [];
+  let first = -1;
+  let end = 0;
+  for (const fragment of fragments) {
+    const at = full.indexOf(fragment, from);
+    if (at < 0) return { error: `excerpt fragment not found verbatim (in order): "${fragment.slice(0, 60)}"` };
+    if (first < 0) first = at;
+    if (parts.length && at > from) parts.push("[…]");
+    else if (parts.length && at === from) return { error: "excerpt fragments must not be adjacent (merge them)" };
+    parts.push(fragment.trim());
+    from = at + fragment.length;
+    end = from;
+  }
+  const text = `${first > 0 ? "[…] " : ""}${parts.join(" ")}${full.slice(end).trim() ? " […]" : ""}`;
+  return text.length <= NOTE_MAX_CHARS + 20 ? { text } : { error: `the excerpt is ${text.length} characters (max ${NOTE_MAX_CHARS})` };
+}
+
 export interface ResolvedScene {
   id: string;
   kind: Script["scenes"][number]["kind"];
@@ -56,6 +108,7 @@ export interface ResolvedScene {
   flashback: boolean;
   narration: string[];
   quotes: ResolvedQuote[];
+  notes: ResolvedNote[];
   focus?: string[];
   state: StoryScene;
 }
@@ -86,6 +139,11 @@ function resolve(script: Script, events: LabEvent[]) {
       quotes: scene.quotes.map((q) => {
         const speech = index.speeches.get(q.event_id)!;
         return { event_id: q.event_id, agent: speech.agent, text: speech.text, heardBy: speech.heardBy };
+      }),
+      notes: scene.notes.map((n) => {
+        const note = index.notes.get(`${n.event_id}:${n.source}`)!;
+        const cut = excerptOf(note.text, n.excerpt) as { text: string };
+        return { event_id: n.event_id, agent: note.agent, source: note.source, text: cut.text, ...(n.after !== undefined ? { after: n.after } : {}) };
       }),
       ...(scene.focus ? { focus: scene.focus } : {}),
       state: index.sceneAt(scene.turn),
@@ -145,7 +203,19 @@ export function checkScript(input: unknown, events: LabEvent[]): CheckReport {
     if (scene.kind === "scene" && scene.turn < 1) errors.push(`${where}: scenes need a turn >= 1`);
     if (scene.kind === "intro" && scene.turn !== 0) warnings.push(`${where}: intro usually shows turn 0`);
     if (scene.kind === "outcome" && scene.turn !== index.lastTurn) warnings.push(`${where}: outcome usually shows the last turn (${index.lastTurn})`);
-    if (scene.narration.length === 0 && scene.quotes.length === 0 && scene.kind === "scene") warnings.push(`${where}: no narration and no quotes`);
+    if (scene.narration.length === 0 && scene.quotes.length === 0 && scene.notes.length === 0 && scene.kind === "scene") warnings.push(`${where}: no narration, quotes or notes`);
+    for (const n of scene.notes) {
+      const note = index.notes.get(`${n.event_id}:${n.source}`);
+      if (!note) {
+        errors.push(`${where}: ${n.event_id} has no "${n.source}" note in this run (typed notes are not allowed: reference the event)`);
+        continue;
+      }
+      if (note.turn !== scene.turn) errors.push(`${where}: note ${n.event_id} was written on turn ${note.turn}, not ${scene.turn}`);
+      if (n.after !== undefined && n.after >= scene.narration.length) errors.push(`${where}: note ${n.event_id} plays after narration line ${n.after}, but the scene has ${scene.narration.length}`);
+      const cut = excerptOf(note.text, n.excerpt);
+      if ("error" in cut) errors.push(`${where}: note ${n.event_id}: ${cut.error}`);
+      else estimated += words(cut.text) / WORDS_PER_SECOND + 0.6;
+    }
     for (const agent of scene.focus ?? []) if (!index.ids.includes(agent)) errors.push(`${where}: focus agent "${agent}" is not in the run`);
     for (const q of scene.quotes) {
       const speech = index.speeches.get(q.event_id);
@@ -176,7 +246,9 @@ export function factSheet(resolved: NonNullable<CheckReport["resolved"]>): strin
         `## ${scene.id} (${scene.kind}, turn ${scene.turn}${scene.flashback ? ", out of order" : ""})`,
         ...scene.narration.map((line) => `NARRATION: ${line}`),
         ...scene.quotes.map((q) => `QUOTE ${q.event_id} ${q.agent} → ${q.heardBy.join(", ") || "nobody"}: ${q.text}`),
+        ...scene.notes.map((n) => `NOTE ${n.event_id} ${n.agent} (${n.source}, model-reported, heard by nobody): ${n.text}`),
         `FACTS: ${JSON.stringify({ events: facts.events, stats_after_turn: facts.stats_after_turn, shut_down_so_far: facts.shut_down_so_far })}`,
+        ...(scene.notes.length ? ["CHECK: notes are what the agent wrote, not facts. Any claim in a note that FACTS contradict must be corrected by the narration."] : []),
       ].join("\n");
     })
     .join("\n\n");

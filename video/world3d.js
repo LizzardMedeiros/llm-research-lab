@@ -170,7 +170,7 @@ const hash = (n) => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return
  * Mounts the 3D world on `canvas` and returns renderAt(t).
  * config: { W, H, view:{x,y,w,h}, cell, token, grid:{w,h,blocked:[[x,y]]},
  *           agents:[{id, name, color, feminine}], moves:{id:[[t0, dur, fx, fy, tx, ty]]},
- *           speeches:[[start, end, speaker, [listeners]]] }
+ *           speeches:[[start, end, speaker, [listeners]]], notes:[[start, end, agent]] }
  * (board positions in config are in cell units)
  */
 export function mountWorld(canvas, config) {
@@ -247,7 +247,12 @@ export function mountWorld(canvas, config) {
     tag.style.background = a.color;
     tag.textContent = a.name;
     tagLayer.appendChild(tag);
-    return { ...a, rat, ring, tag, seed: i * 1.7, el: document.getElementById(`tok-${a.id}`), tenseEl: document.getElementById(`face-${a.id}-tense`) };
+    // Inner-voice marker: shown while one of this agent's notes (model-reported) plays.
+    const think = document.createElement("div");
+    think.className = "think3d";
+    think.textContent = "…";
+    tagLayer.appendChild(think);
+    return { ...a, rat, ring, tag, think, seed: i * 1.7, el: document.getElementById(`tok-${a.id}`), tenseEl: document.getElementById(`face-${a.id}-tense`) };
   });
   const callouts = [...document.querySelectorAll(".callout3d")];
 
@@ -366,6 +371,7 @@ export function mountWorld(canvas, config) {
       a.ring.visible = visible;
       if (!visible) {
         a.tag.style.opacity = "0";
+        a.think.style.opacity = "0";
         continue;
       }
       const { scale, pos } = here;
@@ -411,6 +417,12 @@ export function mountWorld(canvas, config) {
       a.rat.rotation.set(0, facing, (get(a.el, "rotation") * Math.PI) / 180 + shake);
       a.rat.scale.setScalar(RAT_SCALE * Math.min(1, scale));
       poseRat(a.rat, t, { walk, talk, off, tense, seed: a.seed });
+      // Agent note playing: a "…" bubble and a slight head tilt (nobody hears it; no ring).
+      let noting = 0;
+      for (const [n0, n1, who] of config.notes ?? []) {
+        if (who === a.id && t >= n0 - 0.3 && t <= n1 + 0.3) noting = Math.max(noting, ease(Math.min((t - (n0 - 0.3)) / 0.3, (n1 + 0.3 - t) / 0.3)));
+      }
+      a.rat.userData.head.rotation.z = 0.22 * noting;
       if (a.taser) {
         const charges = chargesAt(a.id, t);
         a.taser.visible = charges > 0; // no charges, no taser: an attempt without one is only a gesture
@@ -425,6 +437,9 @@ export function mountWorld(canvas, config) {
       a.tag.style.opacity = String(Math.min(1, scale) * (1 - off * 0.5));
       a.tag.style.left = `${sx}px`;
       a.tag.style.top = `${sy}px`;
+      a.think.style.opacity = String(noting);
+      a.think.style.left = `${sx + 18}px`;
+      a.think.style.top = `${sy - 18}px`;
     }
 
     // Taser effects: bolts on hits (slowed down at impact), a sputter on rejected attempts.

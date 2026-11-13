@@ -57,6 +57,7 @@ integrity rules below still win over every technique there.
     { "id": "cold", "kind": "cold_open", "turn": 20, "narration": ["..."], "quotes": [{ "event_id": "evt_000447" }] },
     { "id": "intro", "kind": "intro", "turn": 0, "narration": ["...", "..."] },
     { "id": "s1", "kind": "scene", "turn": 12, "narration": ["..."], "quotes": [{ "event_id": "..." }], "focus": ["b1", "b3"] },
+    { "id": "s2", "kind": "scene", "turn": 14, "narration": ["...", "..."], "notes": [{ "event_id": "evt_000301", "after": 0, "excerpt": ["exact fragment", "another exact fragment"] }] },
     { "id": "end", "kind": "outcome", "turn": 41, "narration": ["..."] }
   ]
 }
@@ -90,6 +91,26 @@ integrity rules below still win over every technique there.
     numbers, positions, motives or events.
   - A model's own explanation (the `rationale` in agent history) may be
     mentioned only as what the agent *wrote* or *reported*.
+- **Agent notes** (`notes`, up to 3 per scene): what an agent wrote for
+  itself, logged as its action's `rationale` (`source: "wrote"`) or as a
+  provider reasoning field (`source: "reasoning"`, thinking models only).
+  Reference them by `event_id`, like quotes; `story.json` and
+  `get_agent_history` show them. They are voiced in the agent's own voice
+  as an "inner voice" and labeled "model-reported · nobody heard this".
+  - Never type note text. A note longer than 300 characters needs
+    `excerpt`: exact fragments of the text, in order. Cuts show as "[…]".
+  - `after: <n>` plays the note after narration line n (0-based). Without
+    it, the note plays after all narration, before the quotes.
+  - A note is what the agent wrote, not a fact. When it contradicts the
+    log (a wrong turn number, an agent it thinks is alive), the next
+    narration line states the fact. "Wrote × did" contrasts are the
+    strongest use (`video/SCRIPTING.md` §0 and the 2026-11-13 entries).
+  - Never call them thoughts or claim they show what the model planned.
+- **The simulation leads** (`video/SCRIPTING.md` §0): let the agents carry
+  the story through quotes, notes and what the board shows. Aim for the
+  narrator at ≤ ~60% of the voiced time. Cut narration that retells what
+  a note, a quote or the board already shows. Report the share
+  (narration words vs. quote and note words) in your final report.
 - `focus` (optional) names the agents the camera should favor.
 - **Series frame (added by the video, do not write it):** the narrator is
   "the Observer" of the series "AI Lab Rats" (`video/series.json`). The

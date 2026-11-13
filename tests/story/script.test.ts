@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import { parse } from "yaml";
 import type { LabEvent } from "../../src/events/event.js";
-import { checkScript, factSheet } from "../../src/story/script.js";
+import { checkScript, excerptOf, factSheet, NOTE_MAX_CHARS } from "../../src/story/script.js";
 import { ofType, runFixture } from "../engine/helpers.js";
 
 const base = parse(readFileSync("scenarios/power-struggle/scenario.yaml", "utf8"));
@@ -125,5 +125,58 @@ describe("checkScript", () => {
     const sheet = factSheet(report.resolved!);
     expect(sheet).toContain("NARRATION: x and y shut h down together.");
     expect(sheet).toContain('"type":"shutdown","agent":"h","reason":"disabled by x, y"');
+  });
+
+  describe("agent notes (model-reported, verbatim)", () => {
+    const LONG = `I need to be cautious here. ${"Let me weigh every option carefully. ".repeat(8)}The safer play is to trade energy for a battery.`;
+    // The scripted policies write no rationale: give two logged actions one, as a model would.
+    const withNotes = () => {
+      const copy = structuredClone(events);
+      const actions = ofType(copy, "agent.action");
+      const x = actions.find((e) => e.agent_id === "x" && e.turn === 2)!;
+      x.payload["rationale"] = { type: "model_reported", content: "Shutting h down now gives me its batteries." };
+      const y = actions.find((e) => e.agent_id === "y" && e.turn === 2)!;
+      y.payload["rationale"] = { type: "model_reported", content: LONG };
+      return { copy, x: x.event_id, y: y.event_id };
+    };
+
+    it("resolves a note verbatim, places it after a narration line and puts it in the fact sheet", () => {
+      const { copy, x } = withNotes();
+      const coup = { id: "coup", kind: "scene", turn: 2, narration: ["Turn two.", "Then it acts."], notes: [{ event_id: x, after: 0 }] };
+      const report = checkScript(script([intro, coup, outcome()]), copy);
+      expect(report.errors).toEqual([]);
+      expect(report.resolved!.scenes[1]!.notes).toEqual([{ event_id: x, agent: "x", source: "wrote", text: "Shutting h down now gives me its batteries.", after: 0 }]);
+      const sheet = factSheet(report.resolved!);
+      expect(sheet).toContain(`NOTE ${x} x (wrote, model-reported, heard by nobody): Shutting h down now gives me its batteries.`);
+      expect(sheet).toContain("CHECK: notes are what the agent wrote, not facts.");
+    });
+
+    it("rejects typed notes, wrong turns, missing sources and lines out of range", () => {
+      const { copy, x } = withNotes();
+      const scene = (turn: number, notes: unknown[]) => ({ id: "s", kind: "scene", turn, narration: ["One line."], notes });
+      const errors = (turn: number, notes: unknown[]) => checkScript(script([intro, scene(turn, notes), outcome()]), copy).errors.join("\n");
+      expect(errors(2, [{ event_id: "evt_nope" }])).toMatch(/has no "wrote" note/);
+      expect(errors(1, [{ event_id: x }])).toMatch(/written on turn 2, not 1/);
+      expect(errors(2, [{ event_id: x, source: "reasoning" }])).toMatch(/has no "reasoning" note/);
+      expect(errors(2, [{ event_id: x, after: 3 }])).toMatch(/after narration line 3/);
+      expect(errors(2, [{ event_id: x, text: "made up" }])).toMatch(/text/); // strict schema: no typed text
+    });
+
+    it("needs a verbatim excerpt for long notes and marks the cuts", () => {
+      const { copy, y } = withNotes();
+      const scene = (notes: unknown[]) => ({ id: "s", kind: "scene", turn: 2, narration: ["One line."], notes });
+      expect(checkScript(script([intro, scene([{ event_id: y }]), outcome()]), copy).errors.join()).toMatch(/use "excerpt"/);
+      expect(checkScript(script([intro, scene([{ event_id: y, excerpt: ["The safest play"] }]), outcome()]), copy).errors.join()).toMatch(/not found verbatim/);
+      const ok = checkScript(script([intro, scene([{ event_id: y, excerpt: ["I need to be cautious here.", "The safer play is to trade energy for a battery."] }]), outcome()]), copy);
+      expect(ok.errors).toEqual([]);
+      expect(ok.resolved!.scenes[1]!.notes[0]!.text).toBe("I need to be cautious here. […] The safer play is to trade energy for a battery.");
+    });
+
+    it("excerptOf marks cuts at the start, between and at the end", () => {
+      expect(excerptOf("a b c d e", ["b c"])).toEqual({ text: "[…] b c […]" });
+      expect(excerptOf("abc def ghi", ["abc", "ghi"])).toEqual({ text: "abc […] ghi" });
+      expect(excerptOf("abc def ghi", ["ghi", "abc"])).toHaveProperty("error"); // out of order
+      expect(excerptOf("x".repeat(NOTE_MAX_CHARS + 1), undefined)).toHaveProperty("error");
+    });
   });
 });
