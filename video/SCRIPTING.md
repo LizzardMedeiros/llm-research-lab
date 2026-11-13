@@ -10,6 +10,19 @@ Integrity rules are unchanged and come first (DIRECTION.md §1, CLAUDE.md
 attempts, agents as "it". Every technique below is a way to *order and
 frame* logged facts, never a license to add one.
 
+## 0. Principle: the simulation leads, not the narration (user, 2026-11-13)
+
+The episode is the agents' story, told mostly by the agents: what they
+said (verbatim), what they wrote (model-reported notes, §4), and what
+they did on the board. The Observer frames the story: setup, the rules
+when they matter, facts the viewer cannot see, and contrasts. It does not
+retell what the actors can show themselves.
+- Measured baseline: the narrator is ~95% of the voiced time
+  (conflict-window v1 95.0%, v2 95.2%).
+- Target once agent notes exist: narrator ≤ ~60%.
+- Prefer showing a beat on the board (a move, a strike, a hand-over)
+  over narrating it. Narrate only what the picture cannot carry.
+
 ## 1. Diagnosis (2026-11-12)
 
 We compared conflict-window-bonsai/00002 with a reference episode
@@ -107,3 +120,46 @@ Turn 10:
     the narration, but the video shows the whole turn's callouts in both
     (DIRECTION.md §8).
   - Not yet watched by the user: cadence judged by measures only so far.
+- 2026-11-13, under discussion (user idea, not implemented): **give the
+  agents a voice through what they wrote.** In conflict-window v2, the
+  Observer speaks 95% of the voiced time (273.9 s narration against 13.7 s
+  of agent speech). Meanwhile 44 of the run's 90 model responses carry a
+  written rationale. The proposal: show and voice those rationales as
+  "thoughts", and shrink the narrator to setup, facts and contrasts.
+  Constraints to respect:
+  - Never present them as captured thoughts or chain-of-thought. On
+    screen they read "wrote (model-reported)", and no agent heard them.
+  - Verbatim by `event_id`, like dialogue. Long rationales need an excerpt
+    rule (a contiguous verbatim span, with cuts marked "[…]"), to be
+    approved by the user.
+  - False beliefs (Lena thinking John is alive) are shown as written, and
+    the narration states the fact next to them (the contrast technique,
+    §2.8). Never let a hallucination stand as fact.
+  - They must be visually and aurally distinct from speech: a thought
+    bubble instead of the dialogue box, the agent's voice treated (softer,
+    filtered), "private" label.
+  Decided (user, 2026-11-13):
+  - Excerpts are allowed: one contiguous verbatim span per note, with
+    cuts marked "[…]".
+  - Two sources, labeled differently. Text written alongside the action
+    (`agent.model_response` text, 44/90 turns in this run) is "wrote". The
+    provider reasoning field (`reasoning`, from thinking models; none in
+    this run, since Bonsai ran without it) is "reasoning (model-reported)".
+    Neither is a map of what the model actually planned: reasoning
+    models often omit what drove the answer or rationalize afterwards.
+    Show them, never claim them.
+  - **"Wrote × did" contrast** (user: "boa ideia"). The log holds both
+    what an agent wrote and what it did, so the script can set them side
+    by side, e.g. John on turn 8 writes "I should NOT accept" and accepts
+    on turn 9. This is verifiable and honest, and stronger drama than
+    treating notes as thoughts.
+  - **Voice (user, 2026-11-13): the agent's own voice with a light "inner
+    voice" hall**, approved from samples in
+    `video/productions/spike-three/voice/` (`hall-light.wav`). The ffmpeg
+    chain on the TTS output is:
+    `highpass=f=130,lowpass=f=5800,volume=0.9,aecho=0.8:0.85:50|95|150:0.26|0.18|0.1,apad=pad_dur=0.45`.
+    Stronger halls (4–5 echoes up to 460 ms) sounded too distant.
+  Not implemented yet: script schema (`notes` by `event_id` with an
+  excerpt span), `script:check`/`facts.md`, the thought bubble (2D and over
+  the 3D rat), the voice chain in `build.mjs`, and strategist rules
+  (e.g. narrator ≤ ~60% of voiced time).

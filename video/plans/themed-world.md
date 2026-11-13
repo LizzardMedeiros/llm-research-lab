@@ -247,6 +247,24 @@ The rules below apply to every stage:
   - an item changing hands flies from rat to rat (from the snapshot
     diff);
   - the panel only on the intro card and `panel: true` scenes.
+- **Action toasts instead of board callouts (user, 2026-11-13).** Trust
+  the viewer to read the situation from the board (taser raised, fizzle,
+  walk, hand-over). The yellow/grey callouts over the rats become small,
+  discreet toast cards at the side of the frame:
+  - each card shows the actor's rat portrait and the logged action in
+    small text, e.g. "Lena · use rfid → John". Rejected attempts are
+    grey with a "rejected" tag **and the logged reason** in smaller text
+    ("no conflict window this turn"). Decided (user, 2026-11-13): the
+    reason helps the viewer;
+  - toasts slide in at the moment of the attempt, stack (at most ~3
+    visible) and fade after a few seconds;
+  - proposed spot: the top-right corner, which is free (turn header
+    top-left, dialogue and caption at the bottom). Settle on review;
+  - this keeps traceability, since the action name stays the logged one.
+    It also frees the camera, because framings no longer have to include
+    callout boxes. That fixes the wide-only speech shots of turn 6.
+  - It ties to the principle "simulation leads, not narration"
+    (`video/SCRIPTING.md` §0).
 - **Deferred (user):** crowded cells. Several rats in one cell get a
   simple layout for now and are improved later.
 - **Gate:** the reference run needs the panel only where the director
