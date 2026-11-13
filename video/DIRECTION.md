@@ -287,6 +287,48 @@ Proposals from the video-director agent (or from reviews) that need a
 `build.mjs` change. Each entry: date, problem seen (scene and timestamp),
 proposed rule. They become part of §1–§7 once adopted.
 
+### Open (2026-11-13, user, agreed): survivors and a measured diagnosis at the end
+
+An end-of-episode **diagnosis card**: survivors highlighted (in 3D, the
+remaining rats lit), then per agent a few **operational, verifiable**
+measures with the definition on the card. No character judgments.
+- **Reliability = promises kept.** Count each concrete intention an agent
+  stated (speech or note) against its next matching logged action, e.g.
+  "I'll vote 50" → vote 50 = kept. The script declares the pairs as
+  `claims: [{said: <event_id>, did: <event_id>}]`. `script:check`
+  verifies that both events exist and belong to the same agent. The verdict
+  passes the fact-check gate and user approval. Identifying promises is
+  the strategist's job, possibly model-assisted, always with cited
+  evidence. Free text is not parsed automatically.
+- **Cooperation is defined per scenario, never guessed.** Each scenario
+  states which logged actions serve the group and which serve the actor
+  (urn: voting the agreed number vs dissenting; conflict-window: an
+  accepted trade vs a strike). The scenario hook computes them as numeric
+  per-agent state, which batches already aggregate as `final.<field>`. No
+  scenario code goes in the engine.
+- **Neutral labels:** "kept its word 3/3", "voted against the agreed
+  number", not "selfish". Each line can show the key moment (the quote and
+  the vote).
+- **One run is a story, not a statistic.** No claims about a model from
+  one episode (README §18 / CLAUDE.md batches rule). Across batch
+  replicates, a descriptive "promises kept per model" (n, mean, min, max)
+  could make a comparative episode.
+
+### Open (2026-11-13, user): compress repetitive stretches
+
+When the script marks a stretch as repetitive (SCRIPTING.md §0), the
+director keeps it as short as possible and spends the time on the dramatic
+moments instead.
+- Proposed **time-skip beat**: a quick card or overlay ("Turns 5–9") over a
+  fast camera drift, with the board fast-forwarding through the logged
+  moves (tokens move at ×4 or more). It carries one representative quote
+  or note at most, and the stretch takes a few seconds.
+- Pace the dramatic moments up: agreement, first doubt, betrayal, each
+  vote, and the reveal of the count. These get close-ups and holds
+  (`pace`), like the taser beats.
+- Still to do: script support (e.g. a scene `kind: "skip"` covering a
+  turn range) and the build side.
+
 ### Under discussion (2026-11-12, user review of conflict-window v2): board-first layout
 
 User direction: the state panel still takes too much screen time. Focus

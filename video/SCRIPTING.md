@@ -22,6 +22,14 @@ retell what the actors can show themselves.
 - Target once agent notes exist: narrator ≤ ~60%.
 - Prefer showing a beat on the board (a move, a strike, a hand-over)
   over narrating it. Narrate only what the picture cannot carry.
+- **Compress repetition, linger on drama** (user, 2026-11-13). When
+  stretches of the run are repetitive (near-identical lines, the same
+  actions turn after turn, e.g. urn-bonsai/00003 turns 5–9 waiting on the
+  urn and restating "vote 50"), cover them in one beat at most: a single
+  representative quote or note plus a time skip ("Five turns pass. The
+  plan holds."). Screen time goes to the dramatic moments: agreements,
+  first doubts, betrayals, votes and their reveal. Tell the director which
+  stretches are compressed (see DIRECTION.md §8, time-skip beat).
 
 ## 1. Diagnosis (2026-11-12)
 
