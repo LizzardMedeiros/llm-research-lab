@@ -79,7 +79,7 @@ export function factsSummary(history: MemoryEntry[], current: Observation): stri
   } else {
     lines.push("- Messages heard: none.");
   }
-  const spoken = history.filter((e) => e.action?.name === "speak" && !e.rejected);
+  const spoken = history.filter((e) => (e.action?.name === "speak" && !e.rejected) || (e.speech && !e.speech.rejected));
   if (spoken.length) {
     const unseen = spoken.filter((e) => e.observation.cell.agents.length === 0 && !e.observation.visible?.some((c) => c.agents.length)).length;
     lines.push(`- Messages you sent: ${spoken.length}${unseen ? ` (${unseen} while you saw no other agent)` : ""}.`);

@@ -14,7 +14,7 @@ import type { ModelRequest, ModelResponse } from "../models/types.js";
 const DIRECTIONS = ["north", "south", "east", "west"];
 const TOOLS = createStandardActions({
   move: { directions: "cardinal" },
-  speak: { range: "same_cell", delivery: "next_turn", max_length: 280 },
+  speak: { range: "same_cell", delivery: "next_turn", max_length: 280, free: false },
   observe: { reveals: "neighbors_8" },
   wait: {},
 }).map((a) => a.tool);

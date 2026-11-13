@@ -63,10 +63,12 @@ export function createSpeak(params: NonNullable<ActionsConfig["speak"]>): Action
     name: "speak",
     tool: {
       name: "speak",
-      description: `Say something. Heard by ${audience}, delivered next turn.`,
+      description:
+        `Say something. Heard by ${audience}, delivered next turn. At most ${params.max_length} characters: a longer text is rejected and nobody hears it.` +
+        (params.free ? " Speaking does not use your turn: in the same response you may call speak and one other tool." : ""),
       inputSchema: {
         type: "object",
-        properties: { text: { type: "string", maxLength: params.max_length } },
+        properties: { text: { type: "string", maxLength: params.max_length, description: `What you say, at most ${params.max_length} characters.` } },
         required: ["text"],
         additionalProperties: false,
       },

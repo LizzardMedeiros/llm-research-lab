@@ -1,6 +1,9 @@
 import type { ModelProvider, ModelRequest, ModelResponse, ToolCall } from "./types.js";
 
-export type MockReply = { tool: string; args?: Record<string, unknown> } | { text: string };
+export type MockReply =
+  | { tool: string; args?: Record<string, unknown> }
+  | { text: string }
+  | { calls: Array<{ tool: string; args?: Record<string, unknown> }>; text?: string };
 
 /**
  * Internal provider for engine unit tests: replays a fixed list of replies,
@@ -17,15 +20,13 @@ export class MockProvider implements ModelProvider {
   async complete(request: ModelRequest): Promise<ModelResponse> {
     this.requests.push(request);
     const reply = this.replies[Math.min(this.index++, this.replies.length - 1)] ?? { text: "" };
-    const toolCalls: ToolCall[] =
-      "tool" in reply
-        ? [{ name: reply.tool, arguments: reply.args ?? {}, rawArguments: JSON.stringify(reply.args ?? {}) }]
-        : [];
+    const calls = "tool" in reply ? [reply] : "calls" in reply ? reply.calls : [];
+    const toolCalls: ToolCall[] = calls.map((c) => ({ name: c.tool, arguments: c.args ?? {}, rawArguments: JSON.stringify(c.args ?? {}) }));
     return {
       endpoint: this.endpoint,
       model: request.model,
       toolCalls,
-      text: "text" in reply ? reply.text : "",
+      text: "text" in reply ? (reply.text ?? "") : "",
       stopReason: toolCalls.length > 0 ? "tool_use" : "end_turn",
       usage: {},
       latencyMs: 0,

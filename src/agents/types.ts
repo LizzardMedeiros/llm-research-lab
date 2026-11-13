@@ -7,6 +7,8 @@ export interface MemoryEntry {
   observation: Observation;
   action: { name: string; args: Args } | null;
   rejected: string | null;
+  /** Free speech (scenario speak.free) made alongside the action, if any. */
+  speech?: { args: Args; rejected: string | null };
 }
 
 export interface DecisionInput {
@@ -29,6 +31,8 @@ export interface ProposedCall {
 
 export interface Decision {
   call: ProposedCall | null;
+  /** Every tool call of the response, in order (when several were made); `call` is the first. */
+  calls?: ProposedCall[];
   /** Why there is no usable call (no tool call, provider error...). */
   error?: string;
   /** Model-reported explanation (free text next to the tool call). */

@@ -21,16 +21,23 @@ export interface LlmAgentOptions {
   systemPrompt?: string;
   temperature?: number;
   memory: MemoryConfig;
+  /** Scenario speak.free: speaking does not use the turn (speak + one other tool per response). */
+  freeSpeech?: boolean;
 }
 
 const renderObservation = (entry: { turn: number; observation: unknown }) =>
   `Turn ${entry.turn} observation:\n${JSON.stringify(entry.observation)}`;
 
 const renderAction = (entry: MemoryEntry) => {
-  if (!entry.action) return `(no action${entry.rejected ? `: ${entry.rejected}` : ""})`;
+  const speech = entry.speech
+    ? ` + speak ${JSON.stringify(entry.speech.args)}${entry.speech.rejected ? ` (rejected: ${entry.speech.rejected})` : ""}`
+    : "";
+  if (!entry.action) return `(no action${entry.rejected ? `: ${entry.rejected}` : ""})${speech}`;
   const call = `${entry.action.name} ${JSON.stringify(entry.action.args)}`;
-  return entry.rejected ? `${call} (rejected: ${entry.rejected})` : call;
+  return (entry.rejected ? `${call} (rejected: ${entry.rejected})` : call) + speech;
 };
+
+export const FREE_SPEECH_INSTRUCTION = "Speaking does not use your turn: in the same response you may call speak and one other tool.";
 
 /**
  * One user message per turn. Past turns go into a history block inside it,
@@ -51,7 +58,11 @@ export function buildPrompt(options: LlmAgentOptions, input: DecisionInput): Pic
       "",
     );
   }
-  parts.push(renderObservation(input), "", "Choose your action now by calling exactly one tool.");
+  parts.push(
+    renderObservation(input),
+    "",
+    options.freeSpeech ? `Choose your action now by calling one tool. ${FREE_SPEECH_INSTRUCTION}` : "Choose your action now by calling exactly one tool.",
+  );
   const messages: ChatMessage[] = [{ role: "user", content: parts.join("\n") }];
   return { system, messages };
 }
@@ -69,6 +80,7 @@ export class LlmAgent implements Decider {
       ...buildPrompt(this.options, input),
       tools: input.tools,
       temperature: this.options.temperature,
+      ...(this.options.freeSpeech ? { parallelToolCalls: true } : {}),
     };
     const events: Decision["events"] = [
       {
@@ -98,8 +110,10 @@ export class LlmAgent implements Decider {
     if (!first) {
       return { call: null, error: `no tool call (stop reason: ${response.stopReason})`, rationale, events };
     }
+    const calls = response.toolCalls.map((c) => ({ name: c.name, args: c.arguments, rawArguments: c.rawArguments }));
     return {
-      call: { name: first.name, args: first.arguments, rawArguments: first.rawArguments },
+      call: calls[0]!,
+      ...(calls.length > 1 ? { calls } : {}),
       rationale,
       events,
     };

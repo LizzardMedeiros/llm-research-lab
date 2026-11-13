@@ -56,8 +56,12 @@ export function addEvent(index, event) {
     case "agent.model_request": agent.request = p; break;
     case "agent.model_response": agent.response = p; break;
     case "agent.model_error": agent.error = p.error; break;
-    case "agent.action": agent.action = p; break;
-    case "environment.action_rejected": agent.rejected = p.reason; break;
+    // With speak.free a turn can hold a second call, a speech made next to the action.
+    case "agent.action": if (agent.action) agent.speech = p; else agent.action = p; break;
+    case "environment.action_rejected":
+      if (agent.speech && p.proposed?.name === "speak" && agent.action?.action !== "speak") agent.speechRejected = p.reason;
+      else agent.rejected = p.reason;
+      break;
   }
 }
 
@@ -121,7 +125,8 @@ export function describeAction(record) {
   if (!record?.action) return record?.rejected ? "(no action)" : "";
   const args = record.action.args;
   const shown = args && Object.keys(args).length ? ` ${JSON.stringify(args)}` : "";
-  return `${record.action.action}${shown}`;
+  const speech = record.speech ? ` + speak ${JSON.stringify(record.speech.args)}${record.speechRejected ? " (rejected)" : ""}` : "";
+  return `${record.action.action}${shown}${speech}`;
 }
 
 /** Per-agent counters up to and including `turn`. */
@@ -133,6 +138,7 @@ export function statsUntil(index, id, turn) {
     if (r.rejected) stats.rejected++;
     else if (r.action) stats.accepted++;
     if (r.action?.action === "speak" && !r.rejected) stats.spoke++;
+    if (r.speech && !r.speechRejected) stats.spoke++;
     stats.heard += r.observation?.messages?.length ?? 0;
   }
   return stats;

@@ -280,6 +280,7 @@ function renderDecisions() {
         "td",
         {},
         r?.action?.rationale ? h("div", { class: "quote" }, `“${r.action.rationale.content}”`) : null,
+        r?.speechRejected ? h("div", { class: "heard bad" }, `✗ speech: ${r.speechRejected}`) : null,
         obs?.cell?.agents?.length ? h("div", { class: "heard" }, `with: ${obs.cell.agents.join(", ")}`) : null,
         ...(obs?.messages ?? []).map((m) => h("div", { class: "heard" }, `heard ${m.from}: “${m.text}”`)),
         ...(Array.isArray(obs?.notices) ? obs.notices.map((n) => h("div", { class: "heard warn" }, `notice: ${n}`)) : []),

@@ -133,6 +133,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
           systemPrompt: renderPrompt(scenario.config),
           temperature: agent.temperature,
           memory,
+          freeSpeech: scenario.config.actions.speak?.free ?? false,
         }),
       });
     }

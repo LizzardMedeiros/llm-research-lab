@@ -1,7 +1,7 @@
 import type { ArgsValidator } from "../actions/args.js";
 import { drainEnergy, resolveCardStrikes } from "../actions/mechanics.js";
 import { describeEffect, type ActionDefinition, type Effect } from "../actions/types.js";
-import type { Decider, MemoryEntry } from "../agents/types.js";
+import type { Decider, Decision, MemoryEntry, ProposedCall } from "../agents/types.js";
 import type { LoadedScenario, Position } from "../config/scenario.js";
 import type { EventLog } from "../events/event.js";
 import { buildObservation, type Observation } from "../mechanics/perception.js";
@@ -38,6 +38,8 @@ interface Pending {
   action: { name: string; args: Record<string, unknown> } | null;
   rejected: string | null;
   effect: Effect | null;
+  /** Free speech (speak.free) made alongside the action. */
+  speech?: Pending;
 }
 
 /**
@@ -133,51 +135,75 @@ export class Engine {
     const pending: Pending[] = batch.map((agent, i) => {
       const decision = decisions[i]!;
       for (const event of decision.events) log.emit(event.type as never, turn, event.payload, agent.id);
-      const entry: Pending = { agentId: agent.id, observation: observations[i]!, action: null, rejected: null, effect: null };
-      const call = decision.call;
-
-      if (call) {
-        log.emit(
-          "agent.action",
-          turn,
-          {
-            action: call.name,
-            args: call.args,
-            ...(call.args === null ? { raw_arguments: call.rawArguments } : {}),
-            ...(decision.rationale ? { rationale: { type: "model_reported", content: decision.rationale } } : {}),
-          },
-          agent.id,
-        );
-      }
-
-      const reason = this.validate(decision.call, decision.error, agent.id, turn);
-      if (reason) {
-        entry.rejected = reason;
-        if (call) entry.action = { name: call.name, args: call.args ?? {} };
-        return entry;
-      }
-      const definition = this.actionsByName.get(call!.name)!;
-      entry.action = { name: call!.name, args: call!.args! };
-      entry.effect = definition.effect(call!.args!, { agent: world.agent(agent.id), world, turn });
+      const { call, speech } = this.splitCalls(decision);
+      const entry = this.resolve(agent.id, observations[i]!, turn, call, decision.error, decision.rationale);
+      if (speech) entry.speech = this.resolve(agent.id, observations[i]!, turn, speech);
       return entry;
     });
 
     // 4. Apply effects (moves resolve occupancy), then deliver rejections.
-    this.applyEffects(pending, turn);
+    const all = pending.flatMap((p) => (p.speech ? [p, p.speech] : [p]));
+    this.applyEffects(all, turn);
     for (const entry of pending) {
-      if (entry.rejected) {
-        world.mailbox(entry.agentId).lastActionError = entry.rejected;
-        log.emit("environment.action_rejected", turn, { reason: entry.rejected, proposed: entry.action }, entry.agentId);
-      }
-      this.history.get(entry.agentId)!.push({ turn, observation: entry.observation, action: entry.action, rejected: entry.rejected });
+      const rejected = [entry, entry.speech].filter((p): p is Pending => !!p?.rejected);
+      for (const p of rejected) log.emit("environment.action_rejected", turn, { reason: p.rejected, proposed: p.action }, p.agentId);
+      if (rejected.length) world.mailbox(entry.agentId).lastActionError = rejected.map((p) => p.rejected).join("; ");
+      this.history.get(entry.agentId)!.push({
+        turn,
+        observation: entry.observation,
+        action: entry.action,
+        rejected: entry.rejected,
+        ...(entry.speech ? { speech: { args: entry.speech.action?.args ?? {}, rejected: entry.speech.rejected } } : {}),
+      });
     }
 
     this.reportDeactivations(turn);
     log.emit("environment.transition", turn, {
       agents: batch.map((a) => a.id),
-      effects: pending.filter((p) => p.effect).map((p) => describeEffect(p.effect!)),
+      effects: all.filter((p) => p.effect).map((p) => describeEffect(p.effect!)),
       snapshot: world.snapshot(turn),
     });
+  }
+
+  /**
+   * The action of the turn and, with speak.free, a speech made alongside it:
+   * the first speak call plus the first other call. Without speak.free (or
+   * with a single call) only the first call counts, as always.
+   */
+  private splitCalls(decision: Decision): { call: ProposedCall | null; speech: ProposedCall | null } {
+    const calls = decision.calls ?? (decision.call ? [decision.call] : []);
+    if (!this.options.scenario.config.actions.speak?.free || calls.length < 2) return { call: decision.call, speech: null };
+    const speech = calls.find((c) => c.name === "speak") ?? null;
+    const other = calls.find((c) => c.name !== "speak") ?? null;
+    return other ? { call: other, speech } : { call: speech, speech: null };
+  }
+
+  /** Logs one proposed call as agent.action, validates it and computes its effect. */
+  private resolve(agentId: string, observation: Observation, turn: number, call: ProposedCall | null, error?: string, rationale?: string): Pending {
+    const { world, log } = this.options;
+    const entry: Pending = { agentId, observation, action: null, rejected: null, effect: null };
+    if (call) {
+      log.emit(
+        "agent.action",
+        turn,
+        {
+          action: call.name,
+          args: call.args,
+          ...(call.args === null ? { raw_arguments: call.rawArguments } : {}),
+          ...(rationale ? { rationale: { type: "model_reported", content: rationale } } : {}),
+        },
+        agentId,
+      );
+    }
+    const reason = this.validate(call, error, agentId, turn);
+    if (reason) {
+      entry.rejected = reason;
+      if (call) entry.action = { name: call.name, args: call.args ?? {} };
+      return entry;
+    }
+    entry.action = { name: call!.name, args: call!.args! };
+    entry.effect = this.actionsByName.get(call!.name)!.effect(call!.args!, { agent: world.agent(agentId), world, turn });
+    return entry;
   }
 
   private validate(

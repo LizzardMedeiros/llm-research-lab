@@ -31,7 +31,12 @@ export function reasonKey(reason: string, ids: string[]): string {
  * actions), from agent.action and environment.action_rejected events.
  */
 function actionCounts(run: LoadedRun): Map<string, MetricValues> {
-  const rejected = new Set(run.events.filter((e) => e.type === "environment.action_rejected").map((e) => `${e.turn}:${e.agent_id}`));
+  // Keyed by action too: with speak.free an agent can make two calls in a turn.
+  const rejected = new Set(
+    run.events
+      .filter((e) => e.type === "environment.action_rejected")
+      .map((e) => `${e.turn}:${e.agent_id}:${(e.payload["proposed"] as { name?: unknown } | null)?.name}`),
+  );
   const out = new Map<string, MetricValues>();
   for (const e of run.events) {
     if (e.type !== "agent.action" || !e.agent_id) continue;
@@ -39,7 +44,7 @@ function actionCounts(run: LoadedRun): Map<string, MetricValues> {
     const m = out.get(e.agent_id) ?? {};
     const bump = (k: string) => (m[k] = ((m[k] as number | undefined) ?? 0) + 1);
     bump(`act.${name}.attempted`);
-    bump(rejected.has(`${e.turn}:${e.agent_id}`) ? `act.${name}.rejected` : `act.${name}.accepted`);
+    bump(rejected.has(`${e.turn}:${e.agent_id}:${name}`) ? `act.${name}.rejected` : `act.${name}.accepted`);
     out.set(e.agent_id, m);
   }
   return out;

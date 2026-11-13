@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import { runExperiment } from "../../src/engine/runner.js";
 import { MemorySink } from "../../src/events/event.js";
 import { MockProvider } from "../../src/models/mock.js";
+import { indexRun } from "../../src/story/story.js";
+// @ts-expect-error plain browser module, no types
+import { addEvent, createIndex, describeAction, statsUntil } from "../../src/ui/public/model.js";
 import { observationOf, ofType, runFixture } from "./helpers.js";
 
 const scenario = (overrides: Record<string, unknown> = {}) =>
@@ -112,6 +115,56 @@ describe("Engine", () => {
     expect(ofType(events, "agent.action", "m")[0]!.payload["rationale"]).toEqual({ type: "model_reported", content: "Going east." });
     const reasons = ofType(events, "environment.action_rejected", "m").map((e) => e.payload["reason"]);
     expect(reasons).toEqual([expect.stringMatching(/^no tool call/), 'unknown action "fly"']);
+  });
+
+  it("speak.free: one response may speak and act; each call is validated on its own", async () => {
+    const replies = [
+      { calls: [{ tool: "speak", args: { text: "going east" } }, { tool: "move", args: { direction: "east" } }], text: "Plan." },
+      { calls: [{ tool: "speak", args: { text: "x".repeat(300) } }, { tool: "move", args: { direction: "north" } }] },
+      { calls: [{ tool: "speak", args: { text: "only words" } }] },
+    ];
+    const run = async (free: boolean) => {
+      const provider = new MockProvider(replies);
+      const { events } = await runFixture(
+        {
+          "scenario.yaml": scenario({ spawn: [[0, 0], [0, 0]], actions: { move: {}, speak: { range: "global", free }, wait: {} } }),
+          "experiment.yaml": experiment([{ id: "m", provider: "local", model: "tiny" }, scripted("b", [{ action: "wait" }])]),
+        },
+        { providerFactory: () => provider },
+      );
+      return { events, provider };
+    };
+
+    const { events, provider } = await run(true);
+    expect(provider.requests[0]!.parallelToolCalls).toBe(true);
+    expect(provider.requests[0]!.messages[0]!.content).toContain("Speaking does not use your turn");
+    expect(provider.requests[0]!.tools.find((t) => t.name === "speak")!.description).toContain("Speaking does not use your turn");
+    // Turn 1: both calls happen; the rationale goes with the action, not the speech.
+    const actions = ofType(events, "agent.action", "m").map((e) => [e.turn, e.payload["action"], !!e.payload["rationale"]]);
+    expect(actions).toEqual([[1, "move", true], [1, "speak", false], [2, "move", false], [2, "speak", false], [3, "speak", false]]);
+    expect(observationOf(events, "b", 2).messages).toEqual([{ from: "m", text: "going east", turn: 1 }]);
+    expect(observationOf(events, "m", 2).position).toEqual({ x: 1, y: 0 });
+    // Turn 2: the move north is rejected, and so is the too-long speech, separately; both reasons reach the agent.
+    const rejected = ofType(events, "environment.action_rejected", "m").map((e) => [e.turn, (e.payload["proposed"] as any).name]);
+    expect(rejected).toEqual([[2, "move"], [2, "speak"]]);
+    expect(observationOf(events, "m", 3).last_action_error).toMatch(/outside the grid; speak: "text" exceeds 280 characters/);
+    expect(provider.requests[2]!.messages[0]!.content).toContain('Your action: move {"direction":"east"} + speak {"text":"going east"}');
+    expect(observationOf(events, "b", 3).messages).toEqual([]); // the rejected speech was not heard
+
+    // Log readers attribute each rejection to its own call.
+    const story = indexRun(events);
+    expect([...story.speeches.values()].map((sp) => [sp.turn, sp.text])).toEqual([[1, "going east"], [3, "only words"]]);
+    const ui = createIndex();
+    for (const e of events) addEvent(ui, JSON.parse(JSON.stringify(e)));
+    const t2 = ui.turns.get(2).agents.get("m");
+    expect([t2.rejected, t2.speechRejected]).toEqual([expect.stringMatching(/outside the grid/), expect.stringMatching(/exceeds 280/)]);
+    expect(describeAction(ui.turns.get(1).agents.get("m"))).toBe('move {"direction":"east"} + speak {"text":"going east"}');
+    expect(statsUntil(ui, "m", 3).spoke).toBe(2);
+
+    // Without speak.free only the first call counts, as before.
+    const strict = await run(false);
+    expect(strict.provider.requests[0]!.parallelToolCalls).toBeUndefined();
+    expect(ofType(strict.events, "agent.action", "m").map((e) => e.payload["action"])).toEqual(["speak", "speak", "speak"]);
   });
 
   it("applies per-agent memory overrides (window + facts summary)", async () => {

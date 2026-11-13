@@ -64,6 +64,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
               function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
             })),
             tool_choice: "auto",
+            ...(request.parallelToolCalls ? { parallel_tool_calls: true } : {}),
           }
         : {}),
       ...this.options.extraBody,

@@ -30,6 +30,8 @@ export interface ModelRequest {
   /** Ignored by providers that do not accept sampling parameters. */
   temperature?: number;
   maxTokens?: number;
+  /** Allow more than one tool call in the response (free speech). */
+  parallelToolCalls?: boolean;
 }
 
 export interface ToolCall {

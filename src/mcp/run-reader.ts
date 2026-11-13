@@ -281,13 +281,17 @@ export function agentHistory(run: LoadedRun, agentId: string, lastTurns?: number
         ...(o["visible"] ? { visible_agents: (o["visible"] as unknown[]).map(toCell).filter((c) => c.agents.length).map(cellText) } : {}),
       });
     } else if (e.type === "agent.action") {
-      Object.assign(row(e.turn), { action: `${p["action"]} ${JSON.stringify(p["args"])}`, ...(p["rationale"] ? { rationale: p["rationale"] } : {}) });
+      // With speak.free a turn can hold a speech next to the action: join them.
+      const r = row(e.turn);
+      const call = `${p["action"]} ${JSON.stringify(p["args"])}`;
+      Object.assign(r, { action: r["action"] ? `${r["action"]} + ${call}` : call, ...(p["rationale"] ? { rationale: p["rationale"] } : {}) });
     } else if (e.type === "agent.model_response") {
       Object.assign(row(e.turn), { latency_ms: p["latencyMs"], ...(!(p["toolCalls"] as unknown[]).length && p["text"] ? { text_without_tool_call: p["text"] } : {}) });
     } else if (e.type === "agent.model_error") {
       Object.assign(row(e.turn), { model_error: p["error"] });
     } else if (e.type === "environment.action_rejected") {
-      Object.assign(row(e.turn), { rejected: p["reason"] });
+      const r = row(e.turn);
+      Object.assign(r, { rejected: r["rejected"] ? `${r["rejected"]}; ${p["reason"]}` : p["reason"] });
     } else if (e.type === "agent.deactivated") {
       Object.assign(row(e.turn), { shut_down: p["reason"] });
     }

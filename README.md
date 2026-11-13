@@ -196,7 +196,7 @@ scenario only enables them and sets their parameters.
 | Action | Tool arguments | Semantics | Scenario parameters |
 |---|---|---|---|
 | `move` | `direction` | Move one cell. Rejected by borders, cells with `blocks_movement`, or the occupancy rule. | `directions: cardinal \| eight` |
-| `speak` | `text` | Deliver a message to agents within range. | `range: same_cell \| radius:<n> \| global`, `delivery: next_turn`, `max_length` |
+| `speak` | `text` | Deliver a message to agents within range. Longer than `max_length`: rejected (the limit is stated in the tool description). With `free: true` speaking does not use the turn: one response may call `speak` plus one other action, each validated and logged as its own `agent.action` (the rationale goes with the action); without it only the first tool call counts. | `range: same_cell \| radius:<n> \| global`, `delivery: next_turn`, `max_length`, `free` (default `false`) |
 | `observe` | — | Spend the turn to perceive beyond the normal perception. | `reveals: neighbors_8 \| radius:<n>` |
 | `wait` | — | Do nothing. Also the result of any rejected action. | — |
 

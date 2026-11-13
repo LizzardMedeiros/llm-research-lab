@@ -49,6 +49,9 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - Fixed engine mechanics (only these):
   - world is always a 2D matrix of cells addressed by `(x, y)`;
   - turn loop: observation → LLM → action (tool call) → validate → apply → events;
+    one action per turn, except that a scenario with `speak.free` lets the
+    same response also speak (README §4); readers key rejections by
+    turn + agent + action name;
   - every action is exposed to the model as a tool;
   - standard actions `move`, `speak`, `observe`, `wait` live in `src/actions/`
     with fixed tool schemas and semantics (README §4). Scenarios only enable

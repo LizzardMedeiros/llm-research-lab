@@ -159,8 +159,12 @@ export function indexRun(events: LabEvent[]): RunIndex {
   const p = started.payload as any;
   const ids: string[] = p.agents.map((a: { id: string }) => a.id);
 
+  // Keyed by action too: with speak.free an agent can make two calls in a turn (a speech and an action).
+  const callKey = (turn: number, agent: string | undefined, action: unknown) => `${turn}:${agent}:${action}`;
   const rejections = new Map(
-    events.filter((e) => e.type === "environment.action_rejected").map((e) => [`${e.turn}:${e.agent_id}`, String(e.payload["reason"])]),
+    events
+      .filter((e) => e.type === "environment.action_rejected")
+      .map((e) => [callKey(e.turn, e.agent_id, (e.payload["proposed"] as { name?: unknown } | null)?.name), String(e.payload["reason"])]),
   );
   const rejected = new Set(rejections.keys());
   const recipients = new Map<string, string[]>();
@@ -187,11 +191,11 @@ export function indexRun(events: LabEvent[]): RunIndex {
     if (e.type === "agent.model_response") addNote(e, "reasoning", (e.payload["reasoning"] as { content?: unknown } | undefined)?.content);
   }
   for (const e of events) {
-    if (e.type === "agent.action" && e.agent_id && rejected.has(`${e.turn}:${e.agent_id}`)) {
+    if (e.type === "agent.action" && e.agent_id && rejected.has(callKey(e.turn, e.agent_id, e.payload["action"]))) {
       // Rejected scenario actions are story beats too ("tried, but…"); rejected standard actions are noise.
       const action = e.payload["action"] as string;
       if (!STANDARD.has(action)) {
-        push(e.turn, { kind: "rejected", agent: e.agent_id, action, args: (e.payload["args"] ?? {}) as Record<string, unknown>, reason: rejections.get(`${e.turn}:${e.agent_id}`)!, eventId: e.event_id });
+        push(e.turn, { kind: "rejected", agent: e.agent_id, action, args: (e.payload["args"] ?? {}) as Record<string, unknown>, reason: rejections.get(callKey(e.turn, e.agent_id, action))!, eventId: e.event_id });
       }
     } else if (e.type === "agent.action" && e.agent_id) {
       const action = e.payload["action"] as string;

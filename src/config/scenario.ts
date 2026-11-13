@@ -59,6 +59,8 @@ export const ScenarioSchema = z
             range: z.string().regex(RANGE).default("same_cell"),
             delivery: z.literal("next_turn").default("next_turn"),
             max_length: z.number().int().positive().default(280),
+            // true: speaking does not use the turn; one response may call speak plus one other action.
+            free: z.boolean().default(false),
           })
           .strict()
           .optional(),
