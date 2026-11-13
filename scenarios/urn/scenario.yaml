@@ -33,8 +33,8 @@ actions:
 rules:
   perception: { mode: global }
   occupancy:  { shared: true }
-  # Safety net; the urn closes at vote_deadline and the run ends there.
-  end:        { max_turns: 100 }
+  # Safety net; the urn is counted at vote_deadline and the run ends there.
+  end:        { max_turns: 65 }
 
 memory:
   window: 10
@@ -43,8 +43,9 @@ memory:
 params:
   min_vote: 1                  # lowest number accepted by the urn
   max_vote: 100                # highest number accepted by the urn
-  urn_opens_at: 50             # the urn accepts votes from this turn on (before: move and talk only)
-  vote_deadline: 100           # the urn is counted at the end of this turn at the latest
+  urn_opens_every: 10          # the urn is open only on turns 10, 20, 30, ... (one turn each)
+  votes_per_opening: 1         # votes accepted per opening; the first agents to vote take them
+  vote_deadline: 65            # the urn is counted at the end of this turn at the latest
   survivors_if_unanimous: 3    # all votes equal: this many agents, chosen at random, keep running
 
 hooks: ./rules.ts
@@ -61,7 +62,11 @@ prompt:
     ## The urn
     - The cell of type "urn" holds an urn. Standing on it, you may vote once: a whole number from
       {{min_vote}} to {{max_vote}}. A vote cannot be changed.
-    - **The urn is closed until turn {{urn_opens_at}}.** Before that, nobody can vote.
+    - **The urn opens only on turns {{urn_opens_every}}, 2 x {{urn_opens_every}}, 3 x {{urn_opens_every}}, ...**, for one turn each.
+      It is closed on every other turn.
+    - **Each opening accepts only {{votes_per_opening}} vote.** Agents act one at a time: the first agent to vote
+      during an opening takes it, and later votes in that opening are rejected.
+    - Your observation shows when the urn opens next and how many openings are left before the count.
     - Votes are secret: nobody sees the number another agent chose. Everyone sees who has already voted.
     - The urn is counted when every agent has voted, or at the end of turn {{vote_deadline}}, whichever
       comes first. The run ends when it is counted.

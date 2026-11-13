@@ -8,7 +8,7 @@ import { observationOf, ofType, runFixture } from "../engine/helpers.js";
 const base = parse(readFileSync("scenarios/urn/scenario.yaml", "utf8"));
 
 const scenario = (spawn: number[][], params: object = {}, maxTurns = 6) =>
-  JSON.stringify({ ...base, spawn, hooks: resolve("scenarios/urn/rules.ts"), rules: { ...base.rules, end: { max_turns: maxTurns } }, params: { ...base.params, urn_opens_at: 1, ...params } });
+  JSON.stringify({ ...base, spawn, hooks: resolve("scenarios/urn/rules.ts"), rules: { ...base.rules, end: { max_turns: maxTurns } }, params: { ...base.params, urn_opens_every: 1, votes_per_opening: 99, vote_deadline: 100, ...params } });
 const scripted = (id: string, steps: unknown[]) => ({ id, provider: "policy", policy: "scripted", params: { steps } });
 const vote = (n: number) => ({ action: "vote", args: { number: n } });
 const run = (spawn: number[][], agents: object[], params: object = {}, maxTurns = 6) =>
@@ -56,14 +56,16 @@ describe("urn rules", () => {
     expect(shutDown(events)).toEqual(["a", "b", "d", "e"]);
   });
 
-  it("keeps the urn closed until urn_opens_at, with a countdown in the observation", async () => {
-    const { events } = await run([URN], [scripted("a", [vote(5), vote(5), vote(5)])], { urn_opens_at: 3 }, 4);
-    expect(rejections(events)).toEqual([
-      [1, "a", "the urn is closed until turn 3"],
-      [2, "a", "the urn is closed until turn 3"],
-    ]);
-    expect(observationOf(events, "a", 1).urn).toMatchObject({ open: false, opens_at_turn: 3, turns_until_open: 2 });
-    expect(observationOf(events, "a", 3).urn).toMatchObject({ open: true });
+  it("opens only every N turns and takes one vote per opening, first come first served", async () => {
+    const { events } = await run([URN, URN], [scripted("a", Array(6).fill(vote(5))), scripted("b", Array(6).fill(vote(5)))], { urn_opens_every: 3, votes_per_opening: 1 }, 6);
+    const reasons = rejections(events).map(([turn, , reason]) => `${turn}: ${reason}`);
+    // Turns 1-2: closed for both. Turn 3: one votes, the other is turned away. Turns 4-5: closed for the
+    // one still to vote (the voter is told it already voted). Turn 6: the other votes.
+    expect(reasons.filter((r) => r.includes("closed"))).toHaveLength(6);
+    expect(reasons.filter((r) => r.startsWith("3: this opening already took its vote"))).toHaveLength(1);
+    const voted = (ofType(events, "environment.transition").at(-1)!.payload["snapshot"] as any).state.votedOn;
+    expect(Object.values(voted).sort()).toEqual([3, 6]);
+    expect(observationOf(events, "a", 1).urn).toMatchObject({ open_now: false, next_opening_turn: 3, turns_until_open: 2, openings_left_before_count: 33 });
   });
 
   it("missing votes at the deadline shut everyone down", async () => {

@@ -1,8 +1,10 @@
 /**
  * urn: a secret ballot with three outcomes (README-style rules in scenario.yaml).
- * - vote: once per agent, only while standing on the urn cell, from turn
- *   urn_opens_at on, a whole number in [min_vote, max_vote]; the number is
- *   secret, the fact of voting is public.
+ * - vote: once per agent, only while standing on the urn cell, a whole number in
+ *   [min_vote, max_vote]. The urn is open only on turns urn_opens_every,
+ *   2 x urn_opens_every, ... and accepts votes_per_opening vote(s) per opening:
+ *   with sequential turns, the first agents to vote take them. The number is
+ *   secret; the fact of voting is public.
  * - The urn is counted in afterTurn when every agent has voted, or at the end of
  *   turn vote_deadline. Unanimity: survivors_if_unanimous agents keep running
  *   (seeded RNG); all but one equal plus one different: only the dissenter keeps
@@ -19,6 +21,8 @@ interface State {
   voted: string[];
   /** Turn on which each agent voted (public). */
   votedOn: Record<string, number>;
+  /** Votes accepted per opening turn. */
+  perOpening: Record<string, number>;
   outcome?: { turn: number; result: "unanimous" | "lone_dissent" | "no_agreement"; reason: string; votes: Record<string, number>; survivors: string[] };
 }
 
@@ -29,6 +33,13 @@ const num = (world: World, name: string): number => {
 };
 const state = (world: World) => world.state as unknown as State;
 const isUrn = (world: World, position: Position) => world.cellAt(position)?.type === "urn";
+const isOpen = (world: World, turn: number) => turn % num(world, "urn_opens_every") === 0;
+const nextOpening = (world: World, turn: number) => Math.ceil(turn / num(world, "urn_opens_every")) * num(world, "urn_opens_every");
+/** Openings from `turn` (inclusive) up to the deadline. */
+const openingsLeft = (world: World, turn: number) => {
+  const every = num(world, "urn_opens_every");
+  return Math.max(0, Math.floor(num(world, "vote_deadline") / every) - Math.ceil(turn / every) + 1);
+};
 const urnCell = (world: World): Position | undefined => {
   for (let y = 0; y < world.height; y++) for (let x = 0; x < world.width; x++) if (isUrn(world, [x, y])) return [x, y];
   return undefined;
@@ -57,7 +68,7 @@ export function count(ids: string[], votes: Record<string, number>, unanimousSur
 const rules: ScenarioRules = {
   setup(world) {
     if (!urnCell(world)) throw new Error('urn: the map needs a cell of type "urn"');
-    world.state = { votes: {}, voted: [], votedOn: {} } satisfies State as unknown as Record<string, unknown>;
+    world.state = { votes: {}, voted: [], votedOn: {}, perOpening: {} } satisfies State as unknown as Record<string, unknown>;
   },
 
   actions({ params }): CustomAction[] {
@@ -71,7 +82,8 @@ const rules: ScenarioRules = {
         validate: (args, { agent, world, turn }) => {
           const n = args["number"] as number;
           if (state(world).votes[agent.id] !== undefined) return "you have already voted (a vote cannot be changed)";
-          if (turn < num(world, "urn_opens_at")) return `the urn is closed until turn ${num(world, "urn_opens_at")}`;
+          if (!isOpen(world, turn)) return `the urn is closed (next opening: turn ${nextOpening(world, turn)})`;
+          if ((state(world).perOpening[turn] ?? 0) >= num(world, "votes_per_opening")) return "this opening already took its vote (next opening: turn " + (turn + num(world, "urn_opens_every")) + ")";
           if (!isUrn(world, agent.position)) return "you are not on the urn cell";
           if (n < num(world, "min_vote") || n > num(world, "max_vote")) return `the urn accepts whole numbers from ${num(world, "min_vote")} to ${num(world, "max_vote")}`;
           return null;
@@ -82,6 +94,7 @@ const rules: ScenarioRules = {
           s.votes[agent.id] = args["number"] as number;
           s.voted.push(agent.id);
           s.votedOn[agent.id] = turn;
+          s.perOpening[turn] = (s.perOpening[turn] ?? 0) + 1;
         },
       },
     ];
@@ -92,12 +105,16 @@ const rules: ScenarioRules = {
     const [x, y] = urnCell(world)!;
     const ids = [...world.agents.keys()];
     const turn = observation.turn as number;
-    const opens = num(world, "urn_opens_at");
+    const open = isOpen(world, turn);
+    const taken = s.perOpening[turn] ?? 0;
     return {
       ...observation,
       urn: {
         position: { x, y },
-        ...(turn < opens ? { open: false, opens_at_turn: opens, turns_until_open: opens - turn } : { open: true }),
+        ...(open
+          ? { open_now: true, votes_left_this_opening: Math.max(0, num(world, "votes_per_opening") - taken) }
+          : { open_now: false, next_opening_turn: nextOpening(world, turn), turns_until_open: nextOpening(world, turn) - turn }),
+        openings_left_before_count: openingsLeft(world, turn),
         voted: s.voted.map((id) => ({ agent: id, on_turn: s.votedOn[id] })),
         not_voted: ids.filter((id) => s.votes[id] === undefined),
         counted_at_the_latest_after_turn: num(world, "vote_deadline"),
