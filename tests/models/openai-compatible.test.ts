@@ -1,3 +1,5 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { ProviderError } from "../../src/models/errors.js";
 import { OpenAICompatibleProvider, parseToolCall } from "../../src/models/openai-compatible.js";
@@ -107,5 +109,38 @@ describe("parseToolCall", () => {
   it("returns null arguments for invalid JSON or non-objects", () => {
     expect(parseToolCall("move", "{direction: north").arguments).toBeNull();
     expect(parseToolCall("move", "[1]").arguments).toBeNull();
+  });
+});
+
+describe("OpenAICompatibleProvider default fetch", () => {
+  /** A local server that holds the response headers, like a non-streaming model server. */
+  async function slowServer(delayMs: number) {
+    const server = createServer((_req, res) => {
+      setTimeout(() => {
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify(ok({ content: "", tool_calls: [{ id: "c1", function: { name: "wait", arguments: "" } }] }).body));
+      }, delayMs);
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+    const { port } = server.address() as AddressInfo;
+    return { baseUrl: `http://127.0.0.1:${port}/v1`, close: () => new Promise((resolve) => server.close(resolve)) };
+  }
+  const real = (baseUrl: string, timeoutMs: number) =>
+    new OpenAICompatibleProvider({
+      endpoint: "local",
+      baseUrl,
+      timeoutMs,
+      defaultMaxTokens: 16,
+      retry: { statuses: [], maxAttempts: 1, baseDelayMs: 0, maxDelayMs: 0 },
+    });
+
+  it("waits for late headers within timeout_ms and fails past it", async () => {
+    const server = await slowServer(150);
+    try {
+      expect((await real(server.baseUrl, 2_000).complete(request)).toolCalls[0]!.name).toBe("wait");
+      await expect(real(server.baseUrl, 50).complete(request)).rejects.toThrow(ProviderError);
+    } finally {
+      await server.close();
+    }
   });
 });

@@ -1,3 +1,4 @@
+import { Agent, fetch as undiciFetch } from "undici";
 import { ProviderError } from "./errors.js";
 import { DEFAULT_RETRY, withRetry, type RetryPolicy, type Sleep } from "./retry.js";
 import type { ModelProvider, ModelRequest, ModelResponse, ToolCall } from "./types.js";
@@ -50,7 +51,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
 
   constructor(private readonly options: OpenAICompatibleOptions) {
     this.endpoint = options.endpoint;
-    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.fetchImpl = options.fetchImpl ?? patientFetch(options.timeoutMs);
   }
 
   async complete(request: ModelRequest): Promise<ModelResponse> {
@@ -127,6 +128,18 @@ export class OpenAICompatibleProvider implements ModelProvider {
     }
     return (await response.json()) as ChatCompletionResponse;
   }
+}
+
+/**
+ * Node's built-in fetch gives up after 300 s without response headers or body
+ * bytes (undici defaults), whatever the AbortSignal says, and the retry then
+ * resends the request. Non-streaming local models send headers only when the
+ * whole completion is done, so the endpoint's timeout_ms must bound those too.
+ */
+function patientFetch(timeoutMs: number): typeof fetch {
+  const dispatcher = new Agent({ headersTimeout: timeoutMs, bodyTimeout: timeoutMs });
+  return ((input: string, init?: RequestInit) =>
+    undiciFetch(input, { ...(init as object), dispatcher })) as unknown as typeof fetch;
 }
 
 /** Server-exposed reasoning text, if any (model-reported, not internal reasoning). */

@@ -1080,7 +1080,7 @@ endpoints:
     description: Any model on OpenRouter
     base_url: https://openrouter.ai/api/v1
     api_key: ${OPENROUTER_API_KEY}      # read from .env, only when this endpoint is used
-    timeout_ms: 300000                  # optional (default 300000)
+    timeout_ms: 300000                  # optional (default 300000); bounds the whole request, including a server that sends headers only when done
     max_tokens: 4096                    # optional (default 4096)
     retry:                              # optional
       statuses: [429, 500, 502, 503, 504]
