@@ -53,6 +53,7 @@ export function createProvider(config: ProvidersConfig, endpoint: string, deps: 
         defaultMaxTokens: entry.max_tokens,
         retry,
         ...(entry.extra_body ? { extraBody: entry.extra_body } : {}),
+        ...(entry.thinking_body ? { thinkingBody: entry.thinking_body } : {}),
         ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
         ...(deps.sleep ? { sleep: deps.sleep } : {}),
       });

@@ -29,8 +29,13 @@ endpoints:
     description: Ternary Bonsai 2 27B on the `llamacpp` compose service (PrismML llama.cpp fork)
     base_url: ${LLAMACPP_BASE_URL:-http://llamacpp:8080/v1}
     timeout_ms: 900000              # ~5.8 tok/s on a 6 GB RTX 3050
+    max_tokens: 1024                # ~3 min at 5.8 tok/s: stops runaway generations before
+                                    # the HTTP client gives up (~300 s) and silently resends
     extra_body:
       reasoning_effort: none        # requires llama-server --reasoning auto
+    thinking_body:                  # decisive turns (scenario `thinking` hook)
+      reasoning_effort: low         # template levels: low, medium, xhigh (a prompt instruction only)
+      thinking_budget_tokens: 512   # hard cap: llama.cpp ends the thinking after 512 tokens (256 cut it before the decision)
 
   gemini:
     protocol: openai-compatible

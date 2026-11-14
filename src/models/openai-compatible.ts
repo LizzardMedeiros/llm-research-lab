@@ -10,6 +10,8 @@ export interface OpenAICompatibleOptions {
   defaultMaxTokens: number;
   /** Merged into every request body (e.g. `reasoning_effort: "none"`). */
   extraBody?: Record<string, unknown>;
+  /** Merged over extraBody when the request asks for thinking (e.g. `reasoning_effort: "low"`). */
+  thinkingBody?: Record<string, unknown>;
   retry?: RetryPolicy;
   fetchImpl?: typeof fetch;
   sleep?: Sleep;
@@ -68,6 +70,7 @@ export class OpenAICompatibleProvider implements ModelProvider {
           }
         : {}),
       ...this.options.extraBody,
+      ...(request.thinking ? this.options.thinkingBody : {}),
     };
 
     const started = performance.now();

@@ -252,6 +252,7 @@ interface ScenarioRules {
   setup?(world: World, rng: Rng): void;                         // initial world.state, before turn 1
   actions?(ctx: { agentIds; params }): CustomAction[];          // new tools (schemas may enum agent ids)
   observe?(observation: Observation, agent: AgentState, world: World): Observation;
+  thinking?(observation: Observation, agent: AgentState, world: World): boolean; // think this turn? (decisive moments; endpoints with thinking_body)
   validate?(action: { name; args }, ctx): string | null;        // extra rejection rules
   afterTurn?(world: World, rng: Rng, turn: number): void;       // world dynamics
   isFinished?(world: World, turn: number): boolean;             // early end
@@ -1087,6 +1088,9 @@ endpoints:
       base_delay_ms: 2000
     extra_body:                         # optional: merged into every request
       reasoning_effort: none
+    thinking_body:                      # optional: merged over extra_body on turns the
+      reasoning_effort: low             #   scenario's `thinking` hook picks (openai-compatible)
+      thinking_budget_tokens: 512       #   llama.cpp: hard cap on thinking tokens
 
   lmstudio:                             # a server running on your host machine
     protocol: openai-compatible

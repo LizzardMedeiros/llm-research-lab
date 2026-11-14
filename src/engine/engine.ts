@@ -126,6 +126,7 @@ export class Engine {
           turn,
           observation: observations[i]!,
           tools,
+          ...(rules.thinking?.(observations[i]!, world.agent(agent.id), world) ? { thinking: true } : {}),
           history: [...this.history.get(agent.id)!],
         }),
       ),

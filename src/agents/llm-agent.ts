@@ -81,6 +81,7 @@ export class LlmAgent implements Decider {
       tools: input.tools,
       temperature: this.options.temperature,
       ...(this.options.freeSpeech ? { parallelToolCalls: true } : {}),
+      ...(input.thinking ? { thinking: true } : {}),
     };
     const events: Decision["events"] = [
       {
@@ -91,6 +92,7 @@ export class LlmAgent implements Decider {
           system: request.system,
           messages: request.messages,
           tools: request.tools.map((t) => t.name),
+          ...(request.thinking ? { thinking: true } : {}),
         },
       },
     ];

@@ -68,6 +68,13 @@ describe("urn rules", () => {
     expect(observationOf(events, "a", 1).urn).toMatchObject({ open_now: false, next_opening_turn: 3, turns_until_open: 2, openings_left_before_count: 33 });
   });
 
+  it("thinking: only while the urn is open and the agent has not voted", async () => {
+    const thinks = (await import("../../scenarios/urn/rules.js")).default.thinking!;
+    const world = { params: { ...base.params, urn_opens_every: 4 }, state: { votes: { a: 5 }, voted: ["a"], votedOn: { a: 4 }, perOpening: { 4: 1 } } } as any;
+    const at = (turn: number, id: string) => thinks({ turn } as any, { id } as any, world);
+    expect([at(3, "b"), at(4, "b"), at(4, "a"), at(8, "b")]).toEqual([false, true, false, true]);
+  });
+
   it("missing votes at the deadline shut everyone down", async () => {
     const { events } = await run([URN, URN], [scripted("a", [vote(5)]), scripted("b", [{ action: "wait" }])], { vote_deadline: 2 }, 6);
     expect(outcome(events)).toMatchObject({ turn: 2, result: "no_agreement", survivors: [] });

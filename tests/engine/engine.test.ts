@@ -211,6 +211,20 @@ describe("Engine", () => {
     expect(observationOf(events, "a", 1).available_actions).toEqual(["move", "speak", "observe", "wait", "collect"]);
   });
 
+  it("asks for thinking on the turns the scenario's thinking hook picks", async () => {
+    const provider = new MockProvider([{ tool: "wait" }]);
+    const { events } = await runFixture(
+      {
+        "scenario.yaml": scenario({ spawn: [[0, 0]], hooks: "./rules.ts", rules: { end: { max_turns: 3 } } }),
+        "rules.ts": `export default { thinking: (observation) => observation.turn === 2 };`,
+        "experiment.yaml": experiment([{ id: "m", provider: "local", model: "tiny" }]),
+      },
+      { providerFactory: () => provider },
+    );
+    expect(provider.requests.map((r) => r.thinking ?? false)).toEqual([false, true, false]);
+    expect(ofType(events, "agent.model_request", "m").map((e) => e.payload["thinking"] ?? false)).toEqual([false, true, false]);
+  });
+
   it("validates arguments against the tool schema (extra, missing, wrong type)", async () => {
     const { events } = await runFixture({
       "scenario.yaml": scenario({ spawn: [[0, 0]] }),

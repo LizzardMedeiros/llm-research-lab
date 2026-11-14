@@ -32,6 +32,8 @@ export interface ModelRequest {
   maxTokens?: number;
   /** Allow more than one tool call in the response (free speech). */
   parallelToolCalls?: boolean;
+  /** The scenario asks this agent to think this turn; endpoints apply their thinking_body (others ignore it). */
+  thinking?: boolean;
 }
 
 export interface ToolCall {

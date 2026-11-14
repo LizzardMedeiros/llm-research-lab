@@ -187,7 +187,13 @@ spec; read it before architectural changes and keep it in sync with decisions.
   `reasoning: { type: "model_reported", source: "provider_reasoning_field", content }`
   and presented with that caveat (UI, Observer).
 
-### Providers and policies
+#- Thinking per turn: a scenario's `thinking` hook marks decisive turns
+  (read-only, e.g. urn: the urn is open and the agent has not voted); the
+  request carries `thinking: true` (logged on `agent.model_request`) and
+  openai-compatible endpoints merge their `thinking_body` over `extra_body`.
+  Endpoints without `thinking_body` ignore it.
+
+## Providers and policies
 - Protocols (code, `src/models/`) are separate from endpoints (config,
   `providers.yaml`). Protocols: `anthropic` (official SDK) and
   `openai-compatible` (`fetch`, covers Ollama /v1, llama.cpp/Bonsai, Gemini,

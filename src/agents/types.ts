@@ -15,6 +15,8 @@ export interface DecisionInput {
   turn: number;
   observation: Observation;
   tools: ToolDef[];
+  /** The scenario's `thinking` hook asked for thinking this turn. */
+  thinking?: boolean;
   /**
    * Every past turn of this agent, oldest first. Each decider applies its own
    * memory strategy (window, summary) to it.

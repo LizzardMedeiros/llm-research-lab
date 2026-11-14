@@ -39,6 +39,11 @@ export interface ScenarioRules {
   /** Custom actions; `ctx` allows schemas that enumerate agent ids. */
   actions?(ctx: SetupContext): CustomAction[];
   observe?(observation: Observation, agent: AgentState, world: World): Observation;
+  /**
+   * Whether the agent's model thinks this turn (decisive moments). Read-only;
+   * it only takes effect on endpoints with a `thinking_body` in providers.yaml.
+   */
+  thinking?(observation: Observation, agent: AgentState, world: World): boolean;
   validate?(action: { name: string; args: Args }, ctx: ActionContext): string | null;
   afterTurn?(world: World, rng: Rng, turn: number): void;
   isFinished?(world: World, turn: number): boolean;

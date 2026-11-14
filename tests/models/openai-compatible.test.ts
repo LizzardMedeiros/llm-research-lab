@@ -53,6 +53,16 @@ describe("OpenAICompatibleProvider", () => {
     expect(body).not.toHaveProperty("temperature");
   });
 
+  it("merges thinking_body over extra_body only on thinking requests", async () => {
+    const { impl, calls } = fakeFetch([ok({ content: "", tool_calls: [{ id: "c1", function: { name: "wait", arguments: "{}" } }] })]);
+    const provider = make(impl, { extraBody: { reasoning_effort: "none" }, thinkingBody: { reasoning_effort: "low", thinking_budget_tokens: 256 } });
+    await provider.complete(request);
+    await provider.complete({ ...request, thinking: true });
+    expect(calls[0]!.body).toMatchObject({ reasoning_effort: "none" });
+    expect(calls[0]!.body).not.toHaveProperty("thinking_budget_tokens");
+    expect(calls[1]!.body).toMatchObject({ reasoning_effort: "low", thinking_budget_tokens: 256 });
+  });
+
   it("normalizes the response", async () => {
     const { impl } = fakeFetch([ok({ content: "thinking aloud", tool_calls: [{ id: "c1", function: { name: "move", arguments: '{"direction":"north"}' } }] })]);
     const res = await make(impl).complete(request);

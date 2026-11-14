@@ -123,6 +123,11 @@ const rules: ScenarioRules = {
     };
   },
 
+  /** Decisive moment: the urn is open and the agent has not voted yet. */
+  thinking(observation, agent, world) {
+    return isOpen(world, observation.turn as number) && state(world).votes[agent.id] === undefined;
+  },
+
   afterTurn(world, rng, turn) {
     const s = state(world);
     if (s.outcome) return;

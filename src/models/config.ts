@@ -20,6 +20,8 @@ const EndpointSchema = z
     max_tokens: z.number().int().positive().default(4096),
     retry: RetrySchema.optional(),
     extra_body: z.record(z.string(), z.unknown()).optional(),
+    // Merged over extra_body on turns the scenario marks for thinking (rules `thinking` hook).
+    thinking_body: z.record(z.string(), z.unknown()).optional(),
     description: z.string().optional(),
   })
   .strict()
