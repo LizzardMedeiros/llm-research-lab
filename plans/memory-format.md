@@ -285,6 +285,15 @@ batteries and gave 2 to b2. Over the run: 9 rejections (3 move, 1
 disable, 4 speak over 280), input tokens 2289 per call, 100% tool calls,
 `ghost_sightings` 0, `speech_repeated` 0.
 
+Repeat, `structured/00004` (2026-11-17, finished, 20 turns, b1 alone
+survived): 4 rejections (1 move, 1 disable, 2 use_battery without one),
+input tokens 2214 per call, 100% tool calls, `ghost_sightings` 0, no
+repeated rejections, no agent acting against itself. New noise: 10 solo
+`disable` attempts that could never reach quorum, mostly a b1–b2 duel
+(b1 six times). The failure notices were in its history, and b1 wrote "needs
+2 agents, so I need a third agent nearby" and still tried alone: the
+action contradicts its own stated plan (model limit).
+
 **Stage 2 closed (2026-11-16).** The user accepts the remaining noise as
 model limits (spatial rules, arithmetic over time).
 
@@ -295,6 +304,35 @@ model limits (spatial rules, arithmetic over time).
 - "Messages addressed to you": a message whose text contains the agent's
   id. This is deterministic and verifiable.
 - Rejected actions listed with turn and reason, not only counted.
+
+**Done (2026-11-17).** In `structured`, the `facts` summary drops "Messages
+heard / sent" counts and the rejection counts for:
+- the verbatim conversation in one list, heard and said, oldest first, the
+  newest 10 lines, with "(mentions you)" and "you (not delivered: reason)".
+  The agent's observation doesn't say who heard its speech, so the list is
+  one transcript, not one per partner;
+- the latest 5 rejected actions with turn, call and reason (a rejected
+  speech points to the conversation instead of repeating its text).
+
+Offline replay of b2, turn 25 of `classic/00001`: the b1–b2 deal ("deal
+confirmed", turn 11), lost from the classic summary, is back, and the
+begging loop on turns 21–24 is visible as such. The user message is 4618
+characters (classic 6230, stage 2 alone 2785). Speech of the last 5 turns
+now appears twice, in the conversation and in the diff history. Removing
+that duplication belongs to the stage 4 layout.
+
+Run `structured/00005` with stage 3 (2026-11-17, finished, 20 turns, b1
+alone survived; b2–b5 ran out on turn 20 and no battery changed hands):
+13 rejections (5 move, 3 disable "not in your cell", 3 use_battery
+without one, 2 speech over 280), `rejected_repeated` 3, `speech_repeated`
+0, `ghost_sightings` 0, 100% tool calls, input tokens 2497 per call (max
+3857; stage 2 runs: 2289 and 2214). The conversation in the prompts matched
+the log. Engine noise: none found. Model noise: b5, at (x=1, y=2) between
+two walls, bumped into them 4 times, with both walls in "Cells you know" and
+its earlier rejections listed. b1 offered "If you get low, come share"; b2
+answered "charge low, moving to (3,2) to avoid b1 area" and ran out. One
+run: stage 3 shows no drop in rejections. Its value, if any, is in
+negotiation memory, which this passive game barely used.
 
 ### Stage 4: markdown layout, completing `memory.format: structured`
 

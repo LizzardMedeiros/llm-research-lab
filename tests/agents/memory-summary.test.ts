@@ -82,10 +82,42 @@ describe("factsSummary", () => {
 
   it("labeled coordinates (structured) use the same notation as the diff history", () => {
     const history = [entry(obs(1, 0, 0, { cell: { type: "floor", agents: ["p2"] } }), { name: "wait", args: {} })];
-    const text = factsSummary(history, obs(2, 1, 0), "labeled");
+    const text = factsSummary(history, obs(2, 1, 0), "structured");
     expect(text).toContain("- You are at (x=1, y=0).");
     expect(text).toContain("- Cells you have been in (2): (x=0, y=0), (x=1, y=0).");
     expect(text).toContain("p2 at (x=0, y=0) on turn 1 (in your cell)");
     expect(text).not.toMatch(/\(\d+,\d+\)/);
+  });
+
+  it("structured: verbatim conversation (heard and said, mentions marked, undelivered speech) and latest rejections", () => {
+    const long = "x".repeat(300);
+    const history: MemoryEntry[] = [
+      entry(obs(1, 0, 0), { name: "speak", args: { text: 'p2, give me a "battery"' } }),
+      entry(obs(2, 0, 0, { messages: [{ from: "p2", text: "q1: no.", turn: 1 }, { from: "p3", text: "hello all", turn: 1 }] }), { name: "speak", args: { text: long } }, 'speak: "text" exceeds 280 characters'),
+      { ...entry(obs(3, 0, 0), { name: "disable", args: { target: "p2" } }, "p2 is not in your cell"), speech: { args: { text: "now!" }, rejected: null } },
+    ];
+    const text = factsSummary(history, obs(4, 0, 0, { messages: [{ from: "p2", text: "still no", turn: 3 }] }), "structured");
+    expect(text).toContain(
+      [
+        "- Conversation (verbatim, oldest first):",
+        '  - turn 1, p2 (mentions you): "q1: no."',
+        '  - turn 1, p3: "hello all"',
+        '  - turn 1, you: "p2, give me a \\"battery\\""',
+        `  - turn 2, you (not delivered: speak: "text" exceeds 280 characters): "${"x".repeat(80)}…"`,
+        '  - turn 3, p2: "still no"',
+        '  - turn 3, you: "now!"',
+      ].join("\n"),
+    );
+    expect(text).toContain("- Your 3 past turns: 1 accepted actions (speak 1); 2 rejected.");
+    expect(text).toContain('  - turn 2, speak (text in the conversation): speak: "text" exceeds 280 characters\n  - turn 3, disable {"target":"p2"}: p2 is not in your cell');
+    expect(text).not.toContain("Messages heard");
+  });
+
+  it("structured: keeps only the newest conversation lines and says how many are not shown", () => {
+    const history = Array.from({ length: 12 }, (_, i) => entry(obs(i + 1, 0, 0), { name: "speak", args: { text: `m${i + 1}` } }));
+    const text = factsSummary(history, obs(13, 0, 0), "structured");
+    expect(text).toContain("- Conversation (verbatim, oldest first; 2 earlier lines not shown):");
+    expect(text).not.toContain('"m2"');
+    expect(text).toContain('  - turn 12, you: "m12"');
   });
 });

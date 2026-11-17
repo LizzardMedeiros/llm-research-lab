@@ -88,7 +88,7 @@ function renderPrompt(
   // structured drops the agent_id repeated in every past observation: state identity once, up front.
   if (options.memory.format === "structured") parts.push(`You are agent ${input.observation.agent_id}.`, "");
   if (options.memory.summary === "facts") {
-    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation, options.memory.format === "structured" ? "labeled" : "pair"), "");
+    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation, options.memory.format), "");
   }
   if (recent.length > 0 && options.memory.format === "structured") {
     // Each past turn as the changes since the agent's previous turn (full observation only without one).

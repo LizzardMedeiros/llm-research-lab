@@ -10,7 +10,19 @@ import type { MemoryEntry } from "./types.js";
 /** Coordinate notation: `pair` "(3,1)" (classic), `labeled` "(x=3, y=1)" (structured, same as its history). */
 export type CoordStyle = "pair" | "labeled";
 export const formatPoint = (p: Point, style: CoordStyle) => (style === "labeled" ? `(x=${p.x}, y=${p.y})` : `(${p.x},${p.y})`);
+
+/** Does `text` name agent `id` as a whole word ("b1", not "b12")? */
+export function mentions(text: string, id: string): boolean {
+  return new RegExp(`(^|[^A-Za-z0-9_-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_-])`).test(text);
+}
+
 const MAX_LISTED = 12;
+/** structured: lines of the verbatim conversation kept in the summary (newest). */
+export const CONVERSATION_LINES = 10;
+/** structured: rejected actions listed one by one (newest). */
+export const REJECTIONS_LISTED = 5;
+/** Undelivered speech is quoted only this far: nobody heard it. */
+const UNDELIVERED_QUOTE = 80;
 
 function list(items: string[]): string {
   if (items.length <= MAX_LISTED) return items.join(", ");
@@ -26,8 +38,14 @@ function counts(values: string[]): string {
 /** Keeps argument names (useful to the agent); drops only the provider stop reason. */
 const reasonKind = (reason: string) => reason.replace(/\s*\(stop reason: [^)]*\)/, "");
 
-export function factsSummary(history: MemoryEntry[], current: Observation, coords: CoordStyle = "pair"): string {
-  const at = (p: Point) => formatPoint(p, coords);
+/**
+ * `style: classic` keeps the original summary. `structured` (memory.format)
+ * writes coordinates as (x=3, y=1) and replaces the message counts and the
+ * rejection counts with the verbatim conversation and the latest rejected
+ * actions, each with its turn.
+ */
+export function factsSummary(history: MemoryEntry[], current: Observation, style: "classic" | "structured" = "classic"): string {
+  const at = (p: Point) => formatPoint(p, style === "structured" ? "labeled" : "pair");
   const observations: Observation[] = [...history.map((e) => e.observation), current];
   const lines: string[] = [];
 
@@ -85,6 +103,11 @@ export function factsSummary(history: MemoryEntry[], current: Observation, coord
     lines.push(`- Agents you have seen shut down: ${[...shutDown.entries()].map(([id, s]) => `${id} at ${s.where} (seen on turn ${s.turn})`).join("; ")}.`);
   }
 
+  if (style === "structured") {
+    lines.push(...conversation(history, current), ...rejections(history));
+    return lines.join("\n");
+  }
+
   // Messages received and sent.
   const heard = observations.flatMap((o) => o.messages);
   if (heard.length) {
@@ -110,4 +133,52 @@ export function factsSummary(history: MemoryEntry[], current: Observation, coord
   }
 
   return lines.join("\n");
+}
+
+/** Verbatim conversation, heard and said, oldest first (structured). */
+function conversation(history: MemoryEntry[], current: Observation): string[] {
+  const said: Array<{ turn: number; order: number; text: string }> = [];
+  const self = current.agent_id;
+  for (const o of [...history.map((e) => e.observation), current]) {
+    for (const m of o.messages) {
+      said.push({ turn: m.turn, order: 0, text: `turn ${m.turn}, ${m.from}${mentions(m.text, self) ? " (mentions you)" : ""}: ${JSON.stringify(m.text)}` });
+    }
+  }
+  for (const e of history) {
+    const speech = e.action?.name === "speak" ? { args: e.action.args, rejected: e.rejected } : e.speech;
+    if (!speech) continue;
+    const text = String(speech.args["text"] ?? "");
+    said.push(
+      speech.rejected
+        ? { turn: e.turn, order: 1, text: `turn ${e.turn}, you (not delivered: ${reasonKind(speech.rejected)}): ${JSON.stringify(text.length > UNDELIVERED_QUOTE ? `${text.slice(0, UNDELIVERED_QUOTE)}…` : text)}` }
+        : { turn: e.turn, order: 1, text: `turn ${e.turn}, you: ${JSON.stringify(text)}` },
+    );
+  }
+  if (!said.length) return ["- Conversation: none yet."];
+  said.sort((a, b) => a.turn - b.turn || a.order - b.order);
+  const shown = said.slice(-CONVERSATION_LINES);
+  const omitted = said.length - shown.length;
+  return [
+    `- Conversation (verbatim, oldest first${omitted ? `; ${omitted} earlier lines not shown` : ""}):`,
+    ...shown.map((line) => `  - ${line.text}`),
+  ];
+}
+
+/** Accepted actions by name, and the latest rejected ones with turn, call and reason (structured). */
+function rejections(history: MemoryEntry[]): string[] {
+  if (!history.length) return [];
+  const accepted = history.filter((e) => e.action && !e.rejected).map((e) => e.action!.name);
+  const rejected = history.flatMap((e) => [
+    ...(e.rejected ? [{ turn: e.turn, call: !e.action ? "no action" : e.action.name === "speak" ? "speak (text in the conversation)" : `${e.action.name} ${JSON.stringify(e.action.args)}`, reason: reasonKind(e.rejected) }] : []),
+    ...(e.speech?.rejected ? [{ turn: e.turn, call: "speak", reason: reasonKind(e.speech.rejected) }] : []),
+  ]);
+  const lines = [`- Your ${history.length} past turns: ${accepted.length} accepted actions${accepted.length ? ` (${counts(accepted)})` : ""}; ${rejected.length} rejected.`];
+  if (rejected.length) {
+    const shown = rejected.slice(-REJECTIONS_LISTED);
+    lines.push(
+      `- Your rejected actions (oldest first${rejected.length > shown.length ? `; ${rejected.length - shown.length} earlier not shown` : ""}):`,
+      ...shown.map((r) => `  - turn ${r.turn}, ${r.call}: ${r.reason}`),
+    );
+  }
+  return lines;
 }

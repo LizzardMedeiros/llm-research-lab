@@ -1,5 +1,7 @@
 import type { ObservedCell, Observation, Point } from "../mechanics/perception.js";
-import { formatPoint } from "./memory-summary.js";
+import { formatPoint, mentions } from "./memory-summary.js";
+
+export { mentions };
 
 /**
  * Diff history (`memory.format: structured`): a past turn is rendered as what
@@ -15,11 +17,6 @@ const OWN_RULE = new Set(["turn", "max_turns", "agent_id", "grid_size", "positio
 const where = (p: Point) => formatPoint(p, "labeled");
 const show = (value: unknown) => JSON.stringify(value);
 const isEmpty = (value: unknown) => (Array.isArray(value) && value.length === 0) || (value !== null && typeof value === "object" && Object.keys(value).length === 0);
-
-/** Does `text` name agent `id` as a whole word ("b1", not "b12")? */
-export function mentions(text: string, id: string): boolean {
-  return new RegExp(`(^|[^A-Za-z0-9_-])${id.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}($|[^A-Za-z0-9_-])`).test(text);
-}
 
 /** Scalars (and arrays, as one value) under dotted paths: { energy: { charge: 8 } } → energy.charge = 8. */
 export function flatten(value: unknown, prefix = "", out = new Map<string, unknown>()): Map<string, unknown> {

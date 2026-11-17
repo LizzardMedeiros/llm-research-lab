@@ -574,7 +574,11 @@ Memory strategies:
   are compared generically, so no scenario needs code for it. Coordinates in
   the history and the `facts` summary are written `(x=3, y=1)` (`classic`
   keeps `(3,1)`), and the prompt starts with "You are agent <id>." (the
-  diff no longer repeats `agent_id` in every past turn).
+  diff no longer repeats `agent_id` in every past turn). In `structured`,
+  the `facts` summary replaces message and rejection counts with the
+  verbatim conversation (heard and said, newest 10 lines, messages naming
+  the agent marked, undelivered speech marked) and the latest 5 rejected
+  actions with turn, call and reason.
 
 An experiment can override the scenario's memory per agent, which allows A/B
 comparisons in the same run:
