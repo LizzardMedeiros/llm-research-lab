@@ -122,6 +122,16 @@ the seed of a future skill: keep it current whenever the video changes.
   begins, and the board glides to stage mode.
 - Scenes without the panel start directly in stage mode.
 
+### 3D world mode (per-run switch)
+
+- `direction.json` `"world": "3d"` renders the board as an isometric set with
+  robotic lab rats; the 2D board remains the default.
+- User-approved render: `power-struggle-bonsai/00001` (2026-11-16). Keep the
+  3D output separate from the 2D render. Review confirmed dialogue, shutdown
+  and outcome beats remain readable. Known minor issues in this render:
+  name tags overlap in crowded cells, and the shutdown stamp can cover agents
+  in close-ups; defer both to the generic 3D staging pass.
+
 ## 4. Motion language
 
 - **Transition:** a full-screen gradient wipe with "TURN N" (0.35 s in, 0.35 s
