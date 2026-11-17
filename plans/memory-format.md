@@ -344,6 +344,30 @@ per-turn history. The observation renderer follows the rules in
 shape (first-contact, power-struggle, urn, conflict-window) without
 scenario-specific code.
 
+**Done (2026-11-17).** `structured` renders the whole user message as
+markdown sections: identity, summary, conversation, recent turns, "Now"
+(`src/agents/observation-md.ts`, `renderStructured` in `llm-agent.ts`).
+Speech text appears once, in the conversation, which keeps every line from
+the remembered turns. Messages delivered now appear only under "Now".
+Offline replays: b2, turn 25 of `classic/00001`: 4081 characters (stage 3
+4618, classic 6230); b4, turn 4 of `urn-bonsai/00002` (free speech, urn
+fields): 5270 (classic 6557). Still mixed: the scenario system prompts say
+"(0, 0) is the top-left corner"; changing them also changes `classic` and
+the other scenarios, so it waits for the user.
+
+Run `structured/00006` with stage 4 (2026-11-17, finished, 20 turns, b1
+alone survived again; no battery changed hands): 100% tool calls, 5
+rejections, 0 of them `move` (stage 2–3 runs: 1–5), 4 `disable` "not in
+your cell", 1 speech over 280. `ghost_sightings` 0, `rejected_repeated` 1,
+`speech_repeated` 1. Input tokens 2542 per call (stage 3 run: 2497). Mean
+prompt length is driven by how much agents talk (3523 vs 3365 characters),
+so per-run means don't show the layout's saving; the offline replay does.
+Model noise: b3, b4 and b5 shared a cell for turns 15–20 and never joined
+on one target. b3 tried b4 alone six times, while b4 and b5 tried b1, who
+was neither in their cell nor in view ("In your cell: b3, b5" under Now).
+No engine noise found. The markdown observation didn't hurt tool calling
+or movement.
+
 ### Stage 5: A/B batch
 
 A batch per scenario (power-struggle, urn) with conditions `classic`,

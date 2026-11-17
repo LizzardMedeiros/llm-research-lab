@@ -54,7 +54,7 @@ function revealedText(cells: ObservedCell[]): string {
 }
 
 /** What changed from `prev` to `cur`, one fact per item. */
-export function observationChanges(prev: Observation, cur: Observation): string[] {
+export function observationChanges(prev: Observation, cur: Observation, options: { messageText?: boolean } = {}): string[] {
   const out: string[] = [];
   if (prev.position.x !== cur.position.x || prev.position.y !== cur.position.y) out.push(`you are now at ${where(cur.position)}, ${cur.cell.type}`);
 
@@ -67,7 +67,8 @@ export function observationChanges(prev: Observation, cur: Observation): string[
   if (cur.revealed) out.push(revealedText(cur.revealed));
   for (const m of cur.messages) {
     const mentionsYou = mentions(m.text, cur.agent_id) ? `; mentions you, ${cur.agent_id}` : "";
-    out.push(`heard ${m.from} (said on turn ${m.turn}${mentionsYou}): ${show(m.text)}`);
+    // Without text when the prompt carries the conversation (memory.format: structured with a summary).
+    out.push(options.messageText === false ? `heard ${m.from} (said on turn ${m.turn}${mentionsYou})` : `heard ${m.from} (said on turn ${m.turn}${mentionsYou}): ${show(m.text)}`);
   }
 
   const actionsBefore = prev.available_actions.join(", ");

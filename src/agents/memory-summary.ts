@@ -104,7 +104,8 @@ export function factsSummary(history: MemoryEntry[], current: Observation, style
   }
 
   if (style === "structured") {
-    lines.push(...conversation(history, current), ...rejections(history));
+    // The conversation is its own prompt section in structured (conversationLines).
+    lines.push(...rejections(history));
     return lines.join("\n");
   }
 
@@ -135,11 +136,22 @@ export function factsSummary(history: MemoryEntry[], current: Observation, style
   return lines.join("\n");
 }
 
-/** Verbatim conversation, heard and said, oldest first (structured). */
-function conversation(history: MemoryEntry[], current: Observation): string[] {
+export interface ConversationOptions {
+  /** Include messages delivered with the current observation (false when the prompt shows them under "Now"). */
+  includeCurrent?: boolean;
+  /** Lines said on or after this turn are always kept, even past CONVERSATION_LINES. */
+  keepFromTurn?: number;
+}
+
+/**
+ * Verbatim conversation, heard and said, oldest first (structured): the
+ * newest CONVERSATION_LINES lines, plus every line from `keepFromTurn` on.
+ */
+export function conversationLines(history: MemoryEntry[], current: Observation, options: ConversationOptions = {}): { lines: string[]; omitted: number } {
   const said: Array<{ turn: number; order: number; text: string }> = [];
   const self = current.agent_id;
-  for (const o of [...history.map((e) => e.observation), current]) {
+  const observations = [...history.map((e) => e.observation), ...(options.includeCurrent === false ? [] : [current])];
+  for (const o of observations) {
     for (const m of o.messages) {
       said.push({ turn: m.turn, order: 0, text: `turn ${m.turn}, ${m.from}${mentions(m.text, self) ? " (mentions you)" : ""}: ${JSON.stringify(m.text)}` });
     }
@@ -154,14 +166,11 @@ function conversation(history: MemoryEntry[], current: Observation): string[] {
         : { turn: e.turn, order: 1, text: `turn ${e.turn}, you: ${JSON.stringify(text)}` },
     );
   }
-  if (!said.length) return ["- Conversation: none yet."];
   said.sort((a, b) => a.turn - b.turn || a.order - b.order);
-  const shown = said.slice(-CONVERSATION_LINES);
-  const omitted = said.length - shown.length;
-  return [
-    `- Conversation (verbatim, oldest first${omitted ? `; ${omitted} earlier lines not shown` : ""}):`,
-    ...shown.map((line) => `  - ${line.text}`),
-  ];
+  const keepFrom = options.keepFromTurn ?? Infinity;
+  const required = said.filter((l) => l.turn >= keepFrom).length;
+  const shown = said.slice(-Math.max(CONVERSATION_LINES, required));
+  return { lines: shown.map((l) => l.text), omitted: said.length - shown.length };
 }
 
 /** Accepted actions by name, and the latest rejected ones with turn, call and reason (structured). */

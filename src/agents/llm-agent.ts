@@ -2,7 +2,8 @@ import type { MemoryConfig } from "../config/scenario.js";
 import { ProviderError } from "../models/errors.js";
 import type { ChatMessage, ModelProvider, ModelRequest, ModelResponse, TurnRetryPolicy, TurnRetryReason } from "../models/types.js";
 import { observationChanges } from "./history-diff.js";
-import { factsSummary } from "./memory-summary.js";
+import { conversationLines, factsSummary } from "./memory-summary.js";
+import { observationMarkdown } from "./observation-md.js";
 import type { Decider, Decision, DecisionInput, MemoryEntry } from "./types.js";
 
 export const DEFAULT_SYSTEM_PROMPT = [
@@ -30,12 +31,13 @@ export interface LlmAgentOptions {
 const renderObservation = (entry: { turn: number; observation: unknown }) =>
   `Turn ${entry.turn} observation:\n${JSON.stringify(entry.observation)}`;
 
-const renderAction = (entry: MemoryEntry) => {
-  const speech = entry.speech
-    ? ` + speak ${JSON.stringify(entry.speech.args)}${entry.speech.rejected ? ` (rejected: ${entry.speech.rejected})` : ""}`
-    : "";
+/** `speechInConversation`: the prompt quotes speech in its conversation section, so speak calls omit the text. */
+const renderAction = (entry: MemoryEntry, speechInConversation = false) => {
+  const speak = (args: Record<string, unknown>) =>
+    speechInConversation ? "speak (text in the conversation)" : `speak ${JSON.stringify(args)}`;
+  const speech = entry.speech ? ` + ${speak(entry.speech.args)}${entry.speech.rejected ? ` (rejected: ${entry.speech.rejected})` : ""}` : "";
   if (!entry.action) return `(no action${entry.rejected ? `: ${entry.rejected}` : ""})${speech}`;
-  const call = `${entry.action.name} ${JSON.stringify(entry.action.args)}`;
+  const call = entry.action.name === "speak" ? speak(entry.action.args) : `${entry.action.name} ${JSON.stringify(entry.action.args)}`;
   return (entry.rejected ? `${call} (rejected: ${entry.rejected})` : call) + speech;
 };
 
@@ -85,33 +87,12 @@ function renderPrompt(
 ): Pick<ModelRequest, "system" | "messages"> {
   const system = [options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.goal ? `\nYour goal: ${options.goal}` : ""].join("");
   const parts: string[] = [];
-  // structured drops the agent_id repeated in every past observation: state identity once, up front.
-  if (options.memory.format === "structured") parts.push(`You are agent ${input.observation.agent_id}.`, "");
-  if (options.memory.summary === "facts") {
-    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation, options.memory.format), "");
-  }
-  if (recent.length > 0 && options.memory.format === "structured") {
-    // Each past turn as the changes since the agent's previous turn (full observation only without one).
-    const previous = new Map(input.history.map((entry, i) => [entry, input.history[i - 1]]));
-    parts.push(
-      "Your recent history (oldest first; each turn lists what changed in your observation since your previous turn):",
-      ...recent.map((entry) => {
-        const prev = previous.get(entry);
-        const changes = prev ? observationChanges(prev.observation, entry.observation) : null;
-        const seen = changes === null ? renderObservation(entry) : `Turn ${entry.turn}: ${changes.length ? changes.join("; ") : "no change"}`;
-        return `${seen}\nYour action: ${renderAction(entry)}`;
-      }),
-      "",
-    );
-  } else if (recent.length > 0) {
-    parts.push(
-      "Your recent history (oldest first):",
-      ...recent.map((entry) => `${renderObservation(entry)}\nYour action: ${renderAction(entry)}`),
-      "",
-    );
+  if (options.memory.format === "structured") {
+    parts.push(...renderStructured(options, input, recent));
+  } else {
+    parts.push(...renderClassic(options, input, recent));
   }
   parts.push(
-    renderObservation(input),
     "",
     options.freeSpeech ? `Choose your action now by calling one tool. ${FREE_SPEECH_INSTRUCTION}` : "Choose your action now by calling exactly one tool.",
   );
@@ -119,6 +100,61 @@ function renderPrompt(
   return { system, messages };
 }
 
+/** classic: summary, past turns as full observations, current observation as JSON. */
+function renderClassic(options: LlmAgentOptions, input: DecisionInput, recent: MemoryEntry[]): string[] {
+  const parts: string[] = [];
+  if (options.memory.summary === "facts") {
+    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation), "");
+  }
+  if (recent.length > 0) {
+    parts.push(
+      "Your recent history (oldest first):",
+      ...recent.map((entry) => `${renderObservation(entry)}\nYour action: ${renderAction(entry)}`),
+      "",
+    );
+  }
+  parts.push(renderObservation(input));
+  return parts;
+}
+
+/**
+ * structured (plans/memory-format.md): one markdown document. Identity up
+ * front (the diff no longer repeats agent_id), the facts summary, the
+ * verbatim conversation, past turns as changes, and the current observation
+ * as markdown. Speech text appears once, in the conversation.
+ */
+function renderStructured(options: LlmAgentOptions, input: DecisionInput, recent: MemoryEntry[]): string[] {
+  const o = input.observation;
+  const parts: string[] = [`You are agent ${o.agent_id}.`];
+  const withConversation = options.memory.summary === "facts";
+  if (withConversation) {
+    parts.push("", "## Summary of your own observations", factsSummary(input.history, o, "structured"));
+    // Messages heard in the remembered turns stay in full (said the turn before they arrive).
+    const keepFromTurn = recent.length ? recent[0]!.turn - 1 : o.turn;
+    const { lines, omitted } = conversationLines(input.history, o, { includeCurrent: false, keepFromTurn });
+    parts.push(
+      "",
+      `## Conversation (verbatim, oldest first${omitted ? `; ${omitted} earlier lines not shown` : ""}; messages delivered now are under "Now")`,
+      ...(lines.length ? lines.map((l) => `- ${l}`) : ["- none yet"]),
+    );
+  }
+  if (recent.length > 0) {
+    const previous = new Map(input.history.map((entry, i) => [entry, input.history[i - 1]]));
+    parts.push("", "## Recent turns (oldest first; what changed in your observation since your previous turn)");
+    for (const entry of recent) {
+      const prev = previous.get(entry);
+      if (prev) {
+        const changes = observationChanges(prev.observation, entry.observation, { messageText: !withConversation });
+        parts.push(`- Turn ${entry.turn}: ${changes.length ? changes.join("; ") : "no change"}`);
+      } else {
+        parts.push(`- Turn ${entry.turn} (the first turn you remember):`, ...observationMarkdown(entry.observation, { messages: !withConversation }).map((l) => `  ${l}`));
+      }
+      parts.push(`  - Your action: ${renderAction(entry, withConversation)}`);
+    }
+  }
+  parts.push("", `## Now: turn ${o.turn} of ${o.max_turns}`, ...observationMarkdown(o));
+  return parts;
+}
 /**
  * One user message per turn. Past turns go into a history block inside it,
  * never as assistant messages: replaying past actions as assistant *text*

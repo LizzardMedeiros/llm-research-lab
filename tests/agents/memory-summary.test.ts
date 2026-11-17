@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factsSummary } from "../../src/agents/memory-summary.js";
+import { conversationLines, factsSummary } from "../../src/agents/memory-summary.js";
 import type { MemoryEntry } from "../../src/agents/types.js";
 import type { Observation } from "../../src/mechanics/perception.js";
 
@@ -96,28 +96,31 @@ describe("factsSummary", () => {
       entry(obs(2, 0, 0, { messages: [{ from: "p2", text: "q1: no.", turn: 1 }, { from: "p3", text: "hello all", turn: 1 }] }), { name: "speak", args: { text: long } }, 'speak: "text" exceeds 280 characters'),
       { ...entry(obs(3, 0, 0), { name: "disable", args: { target: "p2" } }, "p2 is not in your cell"), speech: { args: { text: "now!" }, rejected: null } },
     ];
-    const text = factsSummary(history, obs(4, 0, 0, { messages: [{ from: "p2", text: "still no", turn: 3 }] }), "structured");
-    expect(text).toContain(
-      [
-        "- Conversation (verbatim, oldest first):",
-        '  - turn 1, p2 (mentions you): "q1: no."',
-        '  - turn 1, p3: "hello all"',
-        '  - turn 1, you: "p2, give me a \\"battery\\""',
-        `  - turn 2, you (not delivered: speak: "text" exceeds 280 characters): "${"x".repeat(80)}…"`,
-        '  - turn 3, p2: "still no"',
-        '  - turn 3, you: "now!"',
-      ].join("\n"),
-    );
+    const current = obs(4, 0, 0, { messages: [{ from: "p2", text: "still no", turn: 3 }] });
+    expect(conversationLines(history, current).lines).toEqual([
+      'turn 1, p2 (mentions you): "q1: no."',
+      'turn 1, p3: "hello all"',
+      'turn 1, you: "p2, give me a \\"battery\\""',
+      `turn 2, you (not delivered: speak: "text" exceeds 280 characters): "${"x".repeat(80)}…"`,
+      'turn 3, p2: "still no"',
+      'turn 3, you: "now!"',
+    ]);
+    expect(conversationLines(history, current, { includeCurrent: false }).lines).not.toContain('turn 3, p2: "still no"');
+
+    const text = factsSummary(history, current, "structured");
     expect(text).toContain("- Your 3 past turns: 1 accepted actions (speak 1); 2 rejected.");
     expect(text).toContain('  - turn 2, speak (text in the conversation): speak: "text" exceeds 280 characters\n  - turn 3, disable {"target":"p2"}: p2 is not in your cell');
     expect(text).not.toContain("Messages heard");
+    expect(text).not.toContain("still no"); // the conversation is its own prompt section
   });
 
-  it("structured: keeps only the newest conversation lines and says how many are not shown", () => {
+  it("structured: keeps the newest conversation lines, and every line from keepFromTurn on", () => {
     const history = Array.from({ length: 12 }, (_, i) => entry(obs(i + 1, 0, 0), { name: "speak", args: { text: `m${i + 1}` } }));
-    const text = factsSummary(history, obs(13, 0, 0), "structured");
-    expect(text).toContain("- Conversation (verbatim, oldest first; 2 earlier lines not shown):");
-    expect(text).not.toContain('"m2"');
-    expect(text).toContain('  - turn 12, you: "m12"');
+    const newest = conversationLines(history, obs(13, 0, 0));
+    expect(newest.omitted).toBe(2);
+    expect(newest.lines[0]).toBe('turn 3, you: "m3"');
+    const kept = conversationLines(history, obs(13, 0, 0), { keepFromTurn: 1 });
+    expect(kept).toMatchObject({ omitted: 0 });
+    expect(kept.lines).toHaveLength(12);
   });
 });

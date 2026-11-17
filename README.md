@@ -564,21 +564,29 @@ Memory strategies:
   advice, so no hallucination can enter it. Model-written summaries are not
   used.
 - `format: classic` (default): each past turn is the full observation JSON
-  plus the action. `format: structured` (in progress, see
-  `plans/memory-format.md`): each past turn is one line of what changed in
-  the agent's own observation since its previous turn (moves, agents
-  entering, leaving or seen shut down, what an `observe` revealed, messages
-  verbatim, changed actions, and scenario fields as dotted paths such as
-  `energy.charge: 9 → 8`), plus the action. A turn with no previous one is
-  shown in full; the current observation is always in full. Scenario fields
-  are compared generically, so no scenario needs code for it. Coordinates in
-  the history and the `facts` summary are written `(x=3, y=1)` (`classic`
-  keeps `(3,1)`), and the prompt starts with "You are agent <id>." (the
-  diff no longer repeats `agent_id` in every past turn). In `structured`,
-  the `facts` summary replaces message and rejection counts with the
-  verbatim conversation (heard and said, newest 10 lines, messages naming
-  the agent marked, undelivered speech marked) and the latest 5 rejected
-  actions with turn, call and reason.
+  plus the action, and the current observation is JSON. `format: structured`
+  (`plans/memory-format.md`) makes the user message one markdown document:
+  - "You are agent <id>." first;
+  - `## Summary of your own observations`: the `facts` summary, with the
+    latest 5 rejected actions (turn, call, reason) instead of counts;
+  - `## Conversation`: verbatim, heard and said, oldest first; the newest 10
+    lines plus every line from the remembered turns; messages naming the
+    agent and undelivered speech are marked;
+  - `## Recent turns`: one line per past turn with what changed in the
+    agent's own observation since its previous turn (moves, agents
+    entering, leaving or seen shut down, observe results, messages heard,
+    changed actions, scenario fields as dotted paths such as
+    `energy.charge: 9 → 8`), plus the action; speech text is only in the
+    conversation;
+  - `## Now: turn N of M`: the current observation as markdown.
+
+  Coordinates are written `(x=3, y=1)` throughout (`classic` keeps `(3,1)`).
+  Scenario fields are rendered by shape (dotted paths, lists), never by
+  name, so no scenario needs code for it. Agent-written text is always
+  JSON-quoted on one line. The observation object logged in
+  `agent.observation` is the same in both formats. Without
+  `summary: facts` there is no conversation section, and the history keeps
+  message and speech text.
 
 An experiment can override the scenario's memory per agent, which allows A/B
 comparisons in the same run:
