@@ -12,7 +12,8 @@
     "ui": "tsx src/ui/server.ts",
     "story": "tsx src/cli/story.ts",
     "script:check": "tsx src/cli/script.ts",
-    "batch": "tsx src/cli/batch.ts"
+    "batch": "tsx src/cli/batch.ts",
+    "metrics": "tsx src/cli/metrics.ts"
   },
   "license": "ISC",
   "dependencies": {

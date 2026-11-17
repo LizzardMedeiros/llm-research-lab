@@ -120,4 +120,42 @@ suite("action and shutdown metrics", () => {
     expect(report.conditions.c!.run["shutdown.disabled_by"]).toMatchObject({ n: 2, mean: 0.5 });
   });
 
+  it("measures prompt and memory noise: tokens, repeated speech and rejections, ghost sightings", async () => {
+    const { runMetrics, textSimilarity } = await import("../../src/batch/metrics.js");
+    expect(textSimilarity("b1, please give me a battery now!", "b1 please give me a battery now")).toBe(1);
+    expect(textSimilarity("hello there", "goodbye now")).toBe(0);
+
+    const t = setup({ name: "noise", conditions: { power: resolve("tests/fixtures/power-struggle-mock.yaml") }, seeds: [1] });
+    const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
+    const base = loadRun(t.eventsDir, manifest.runs[0]!.ref);
+    const started = base.events.find((e) => e.type === "experiment.started")!;
+    let n = 0;
+    const ev = (turn: number, type: string, agent_id: string, payload: Record<string, unknown>) =>
+      ({ ...started, event_id: `evt_x${++n}`, turn, type, agent_id, payload }) as (typeof base.events)[number];
+    const cell = (agents: string[]) => ({ x: 0, y: 0, type: "floor", agents });
+    const obs = (own: string[], visible: string[][] = []) => ({ position: { x: 0, y: 0 }, cell: cell(own), visible: visible.map(cell), messages: [] });
+    const events = [
+      started,
+      ev(1, "agent.model_response", "a1", { usage: { inputTokens: 1000, outputTokens: 10 }, toolCalls: [] }),
+      ev(1, "agent.action", "a1", { action: "speak", args: { text: "a2: give me a battery now." } }),
+      ev(2, "agent.model_response", "a1", { usage: { inputTokens: 3000, outputTokens: 10 }, toolCalls: [] }),
+      ev(2, "agent.action", "a1", { action: "speak", args: { text: "a2, give me a battery now!" } }), // repeat
+      ev(3, "agent.action", "a1", { action: "speak", args: { text: "Let us meet at the corner." } }), // new
+      ev(9, "agent.action", "a1", { action: "speak", args: { text: "a2: give me a battery now." } }), // too late to count
+      ev(4, "agent.action", "a1", { action: "speak", args: { text: "a2: give me a battery now." } }),
+      ev(4, "environment.action_rejected", "a1", { reason: 'speak: "text" exceeds 280 characters', proposed: { name: "speak" } }), // rejected: not a speech
+      ev(5, "environment.action_rejected", "a1", { reason: "a3 is not in your cell", proposed: { name: "disable" } }),
+      ev(6, "environment.action_rejected", "a1", { reason: "a4 is not in your cell", proposed: { name: "disable" } }), // same reason
+      ev(5, "agent.deactivated", "a3", { reason: "ran out of energy", since_turn: 5 }),
+      ev(5, "agent.observation", "a1", { observation: obs(["a3"]) }), // same turn: not a ghost
+      ev(6, "agent.observation", "a1", { observation: obs(["a3"], [["a3", "a2"]]) }), // 2 ghosts
+      ev(6, "agent.observation", "a2", { observation: { ...obs([]), revealed: [cell(["a3"])] } }), // seen on turn 5, still running then
+    ];
+    const m = runMetrics({ ...base, events });
+    const a1 = m.agents["a1"]!.metrics;
+    expect(a1).toMatchObject({ tokens_in_mean: 2000, tokens_in_max: 3000, speech_repeated: 1, rejected_repeated: 1, ghost_sightings: 2 });
+    expect(a1["speech_repeated_rate"]).toBeCloseTo(1 / 4);
+    expect(m.agents["a2"]!.metrics).toMatchObject({ speech_repeated: 0, ghost_sightings: 0, tokens_in_mean: null });
+    expect(m.run).toMatchObject({ speech_repeated_total: 1, rejected_repeated_total: 1, ghost_sightings_total: 2 });
+  });
 });

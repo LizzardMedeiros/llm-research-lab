@@ -23,6 +23,7 @@ spec; read it before architectural changes and keep it in sync with decisions.
   - `npm run model:check -- <endpoint> <model> [--repeat N]` — check a model
     produces valid tool calls (calls the real model)
   - `npm run batch -- <batch.yaml> [--report]` — conditions × seeds × replicates, resumable; report in `batches/<name>/`
+  - `npm run metrics [-- <exp>[/<run>] ...]` — the batch report's metrics for existing runs (stdout)
   - `npm run story -- <exp>/<run> [--narrator <endpoint>/<model>]` — story.json for a video
   - `docker compose --profile video run --rm video node /app/video/build.mjs <story.json>` — render it
   - `npm run script:check -- <script.json>` — validate a written episode script, resolve quotes, write facts.md

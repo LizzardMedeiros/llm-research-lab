@@ -881,6 +881,14 @@ docker compose run --rm lab npm run batch -- batches/memory-4b.yaml --report   #
     `act.<action>.attempted`, `.accepted` and `.rejected` (standard and
     scenario actions; e.g. `act.disable.rejected`). "Accepted" means the
     environment applied it, not that it achieved anything.
+  - Prompt and memory noise, per agent (and `_total` per run):
+    `tokens_in_mean` / `tokens_in_max` (input tokens per model request);
+    `speech_repeated` (and `_rate`): accepted speeches whose word set
+    matches one of the agent's own speeches from the previous 5 turns
+    (Jaccard ≥ 0.8; literal repeats, not paraphrases); `rejected_repeated`:
+    a rejection with the same reason (ids removed) as one in the previous
+    5 turns; `ghost_sightings`: agents listed in an observation's cells
+    after they shut down (for `revealed`, before the turn of the observe).
   - Per run: turns, survivors, shutdowns, speech heard, and shutdowns by
     reason, with agent ids removed (`shutdown.ran_out_of_energy`,
     `shutdown.disabled_by`). This is how a successful coalition shows up.
@@ -893,6 +901,9 @@ docker compose run --rm lab npm run batch -- batches/memory-4b.yaml --report   #
 - **Descriptive only:** no significance tests or confidence intervals.
   Automatic statistical analysis remains out of scope (§18). Read
   differences against the sd and n.
+- **Existing runs:** `npm run metrics [-- <experiment> <experiment>/<run> ...]`
+  prints the same report for runs already in `events/`, one column per
+  experiment (incomplete runs are listed but left out of the metrics).
 - Batch definitions (`batches/*.yaml`) are versioned; outputs
   (`batches/*/`) are gitignored.
 
@@ -1045,6 +1056,7 @@ lab, but the engine, UI, batches and videos are plain commands. Prefix every
 | Watch runs (replay and live) | `docker compose up -d ui` → http://localhost:3100 |
 | Check that a model makes valid tool calls | `npm run model:check -- <endpoint> <model> --repeat 5` |
 | Compare conditions | `npm run batch -- batches/<name>.yaml` (resumable) · `--report` rebuilds `batches/<name>/report.md` |
+| Metrics of existing runs | `npm run metrics [-- <experiment>/<run> ...]` (same report, one column per experiment) |
 | Inspect a log by hand | `events/<experiment>/<run>.jsonl`, one event per line (§8) |
 | Ask questions about runs from another MCP client | stdio server: `docker compose run --rm -i -T lab node_modules/.bin/tsx src/mcp/observer-server.ts` |
 | Quick video of a run | `npm run story -- <experiment>/<run>`, then render (§16) |

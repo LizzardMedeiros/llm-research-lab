@@ -50,6 +50,96 @@ function actionCounts(run: LoadedRun): Map<string, MetricValues> {
   return out;
 }
 
+/** Repeats count only within this many turns of the earlier occurrence. */
+export const REPEAT_WINDOW_TURNS = 5;
+/** Word-set (Jaccard) similarity at or above which two speeches count as the same. */
+export const SPEECH_REPEAT_SIMILARITY = 0.8;
+
+const wordSet = (text: string) => new Set(text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+
+/** Jaccard similarity of the word sets of two texts (1 = same words). */
+export function textSimilarity(a: string, b: string): number {
+  const wa = wordSet(a);
+  const wb = wordSet(b);
+  if (wa.size === 0 && wb.size === 0) return 1;
+  let shared = 0;
+  for (const w of wa) if (wb.has(w)) shared++;
+  return shared / (wa.size + wb.size - shared);
+}
+
+/** Agent ids listed in an observation's cells, with the turn they were seen (any log format). */
+function observedAgents(observation: Record<string, unknown>, turn: number): Array<{ id: string; seenOnTurn: number }> {
+  const ids = (c: unknown) => {
+    const agents = (c as { agents?: unknown } | null | undefined)?.agents;
+    return Array.isArray(agents) ? agents.map(String) : [];
+  };
+  const now = [observation["cell"], ...((observation["visible"] as unknown[] | undefined) ?? [])].flatMap(ids);
+  // `revealed` is what an observe saw during the previous turn.
+  const revealed = ((observation["revealed"] as unknown[] | undefined) ?? []).flatMap(ids);
+  return [...now.map((id) => ({ id, seenOnTurn: turn })), ...revealed.map((id) => ({ id, seenOnTurn: turn - 1 }))];
+}
+
+/**
+ * Prompt and memory noise per agent, from the log only (generic):
+ * - tokens_in_mean / tokens_in_max: input tokens per model request (every attempt);
+ * - speech_repeated (and _rate over accepted speeches): accepted speeches nearly identical (SPEECH_REPEAT_SIMILARITY)
+ *   to one of the agent's own accepted speeches in the previous REPEAT_WINDOW_TURNS turns;
+ * - rejected_repeated: rejections with the same reason (ids removed) as one of the
+ *   agent's rejections in the previous REPEAT_WINDOW_TURNS turns;
+ * - ghost_sightings: agents listed in an observation's cells although they had
+ *   shut down before the turn the cell was seen (`revealed`: the previous turn).
+ */
+function noiseMetrics(run: LoadedRun, ids: string[]): Map<string, MetricValues> {
+  const deactivatedAt = new Map<string, number>();
+  for (const e of run.events) if (e.type === "agent.deactivated" && e.agent_id) deactivatedAt.set(e.agent_id, Math.min(e.turn, deactivatedAt.get(e.agent_id) ?? Infinity));
+  const rejectedCalls = new Set(
+    run.events
+      .filter((e) => e.type === "environment.action_rejected")
+      .map((e) => `${e.turn}:${e.agent_id}:${(e.payload["proposed"] as { name?: unknown } | null)?.name}`),
+  );
+
+  const out = new Map<string, MetricValues>();
+  const tokens = new Map<string, number[]>();
+  const speeches = new Map<string, Array<{ turn: number; text: string }>>();
+  const rejections = new Map<string, Array<{ turn: number; key: string }>>();
+  const m = (id: string) => {
+    let values = out.get(id);
+    if (!values) out.set(id, (values = { speech_repeated: 0, rejected_repeated: 0, ghost_sightings: 0 }));
+    return values;
+  };
+  const recent = <T extends { turn: number }>(list: T[], turn: number) => list.filter((x) => x.turn < turn && turn - x.turn <= REPEAT_WINDOW_TURNS);
+
+  for (const e of run.events) {
+    if (!e.agent_id) continue;
+    const id = e.agent_id;
+    if (e.type === "agent.model_response") {
+      const input = (e.payload["usage"] as { inputTokens?: unknown } | undefined)?.inputTokens;
+      if (typeof input === "number") tokens.set(id, [...(tokens.get(id) ?? []), input]);
+    } else if (e.type === "agent.action" && e.payload["action"] === "speak" && !rejectedCalls.has(`${e.turn}:${id}:speak`)) {
+      const text = String((e.payload["args"] as { text?: unknown } | undefined)?.text ?? "");
+      const mine = speeches.get(id) ?? [];
+      if (recent(mine, e.turn).some((s) => textSimilarity(s.text, text) >= SPEECH_REPEAT_SIMILARITY)) (m(id)["speech_repeated"] as number)++;
+      speeches.set(id, [...mine, { turn: e.turn, text }]);
+    } else if (e.type === "environment.action_rejected") {
+      const key = reasonKey(String(e.payload["reason"] ?? ""), ids);
+      const mine = rejections.get(id) ?? [];
+      if (recent(mine, e.turn).some((r) => r.key === key)) (m(id)["rejected_repeated"] as number)++;
+      rejections.set(id, [...mine, { turn: e.turn, key }]);
+    } else if (e.type === "agent.observation") {
+      const observation = e.payload["observation"] as Record<string, unknown> | undefined;
+      if (!observation) continue;
+      const ghosts = observedAgents(observation, e.turn).filter((seen) => (deactivatedAt.get(seen.id) ?? Infinity) < seen.seenOnTurn);
+      (m(id)["ghost_sightings"] as number) += ghosts.length;
+    }
+  }
+  for (const [id, list] of speeches) m(id)["speech_repeated_rate"] = ratio(m(id)["speech_repeated"] as number, list.length);
+  for (const [id, values] of tokens) {
+    m(id)["tokens_in_mean"] = values.reduce((s, x) => s + x, 0) / values.length;
+    m(id)["tokens_in_max"] = Math.max(...values);
+  }
+  return out;
+}
+
 export function runMetrics(run: LoadedRun): RunMetrics {
   const summary = experimentSummary(run);
   const index = indexRun(run.events);
@@ -61,6 +151,7 @@ export function runMetrics(run: LoadedRun): RunMetrics {
   }
 
   const actions = actionCounts(run);
+  const noise = noiseMetrics(run, index.ids);
   const actionNames = [...new Set([...actions.values()].flatMap((m) => Object.keys(m)))];
 
   const agents: RunMetrics["agents"] = {};
@@ -82,6 +173,12 @@ export function runMetrics(run: LoadedRun): RunMetrics {
       tokens_in: model ? model.tokens.input : null,
       tokens_out: model ? model.tokens.output : null,
       median_latency_ms: model ? model.median_latency_ms : null,
+      tokens_in_mean: noise.get(a.id)?.["tokens_in_mean"] ?? null,
+      tokens_in_max: noise.get(a.id)?.["tokens_in_max"] ?? null,
+      speech_repeated: noise.get(a.id)?.["speech_repeated"] ?? 0,
+      speech_repeated_rate: noise.get(a.id)?.["speech_repeated_rate"] ?? null,
+      rejected_repeated: noise.get(a.id)?.["rejected_repeated"] ?? 0,
+      ghost_sightings: noise.get(a.id)?.["ghost_sightings"] ?? 0,
     };
     // Every action name seen in the run, so absent actions count as 0 (not missing).
     for (const key of actionNames) metrics[key] = actions.get(a.id)?.[key] ?? 0;
@@ -107,6 +204,9 @@ export function runMetrics(run: LoadedRun): RunMetrics {
       survivors: outcome.survivors.length,
       shutdowns: index.ids.length - outcome.survivors.length,
       speech_heard_total: [...heardSpeeches.values()].reduce((s, n) => s + n, 0),
+      speech_repeated_total: [...noise.values()].reduce((s, v) => s + ((v["speech_repeated"] as number | undefined) ?? 0), 0),
+      rejected_repeated_total: [...noise.values()].reduce((s, v) => s + ((v["rejected_repeated"] as number | undefined) ?? 0), 0),
+      ghost_sightings_total: [...noise.values()].reduce((s, v) => s + ((v["ghost_sightings"] as number | undefined) ?? 0), 0),
       ...shutdownReasons,
       ...totals,
     },
