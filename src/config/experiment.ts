@@ -8,7 +8,7 @@ const AgentId = z.string().regex(/^[A-Za-z0-9_-]+$/, "agent ids use letters, dig
 
 /** Per-agent override of the scenario's memory strategy (any subset). */
 const MemoryOverrideSchema = z
-  .object({ window: z.number().int().min(0).optional(), summary: z.enum(["none", "facts"]).optional() })
+  .object({ window: z.number().int().min(0).optional(), summary: z.enum(["none", "facts"]).optional(), format: z.enum(["classic", "structured"]).optional() })
   .strict()
   .optional();
 

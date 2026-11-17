@@ -30,16 +30,35 @@ const history: MemoryEntry[] = [1, 2, 3].map((turn) => ({
 
 const input: DecisionInput = { turn: 4, observation: observation(4), tools, history };
 
-const options = (provider: ModelProvider, window = 3) => ({
+const options = (provider: ModelProvider, window = 3, format: "classic" | "structured" = "classic") => ({
   agentId: "a1",
   provider,
   model: "test-model",
   goal: "Keep running.",
   systemPrompt: "Scenario rules.",
-  memory: { window, summary: "facts" as const },
+  memory: { window, summary: "facts" as const, format },
 });
 
 describe("buildPrompt", () => {
+  it("structured: past turns as changes since the previous turn; the oldest without one in full", () => {
+    const provider: ModelProvider = { endpoint: "test", complete: vi.fn() };
+    const moved: MemoryEntry[] = history.map((entry) =>
+      entry.turn === 3 ? { ...entry, observation: { ...entry.observation, messages: [{ from: "a2", text: "hi", turn: 2 }] } } : entry,
+    );
+    const content = buildPrompt(options(provider, 3, "structured"), { ...input, history: moved }).messages[0]!.content;
+    expect(content.startsWith("You are agent a1.\n")).toBe(true);
+    expect(content).toContain("Turn 1 observation:\n{"); // no previous turn: full observation
+    expect(content).toContain("Turn 2: no change\nYour action: speak");
+    expect(content).toContain('Turn 3: heard a2 (said on turn 2): "hi"\nYour action: speak');
+    expect(content).toContain("Turn 4 observation:\n{"); // the current observation stays in full
+    expect(content).not.toContain("Turn 2 observation");
+
+    // A window that starts later still diffs against the turn before it.
+    const windowed = buildPrompt(options(provider, 1, "structured"), { ...input, history: moved }).messages[0]!.content;
+    expect(windowed).toContain('Turn 3: heard a2');
+    expect(windowed).not.toContain("Turn 1 observation");
+  });
+
   it("drops oldest full turns to fit while retaining the facts summary and current observation", () => {
     const unlimited: ModelProvider = { endpoint: "test", complete: vi.fn() };
     const full = buildPrompt(options(unlimited), input);

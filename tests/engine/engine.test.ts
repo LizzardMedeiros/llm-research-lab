@@ -227,7 +227,7 @@ describe("Engine", () => {
     expect(last(summarized)).toContain("- You are at (2,1), where you have been since turn 1.");
     expect(last(summarized).match(/Your action:/g)).toHaveLength(1);
     const agents = ofType(events, "experiment.started")[0]!.payload["agents"] as Array<Record<string, unknown>>;
-    expect(agents.map((a) => a["memory"])).toEqual([{ window: 3, summary: "none" }, { window: 1, summary: "facts" }]);
+    expect(agents.map((a) => a["memory"])).toEqual([{ window: 3, summary: "none", format: "classic" }, { window: 1, summary: "facts", format: "classic" }]);
   });
 
   it("runs scenario hooks: custom actions, state in snapshots, early finish", async () => {

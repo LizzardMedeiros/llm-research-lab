@@ -1,6 +1,7 @@
 import type { MemoryConfig } from "../config/scenario.js";
 import { ProviderError } from "../models/errors.js";
 import type { ChatMessage, ModelProvider, ModelRequest, ModelResponse, TurnRetryPolicy, TurnRetryReason } from "../models/types.js";
+import { observationChanges } from "./history-diff.js";
 import { factsSummary } from "./memory-summary.js";
 import type { Decider, Decision, DecisionInput, MemoryEntry } from "./types.js";
 
@@ -84,10 +85,25 @@ function renderPrompt(
 ): Pick<ModelRequest, "system" | "messages"> {
   const system = [options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT, options.goal ? `\nYour goal: ${options.goal}` : ""].join("");
   const parts: string[] = [];
+  // structured drops the agent_id repeated in every past observation: state identity once, up front.
+  if (options.memory.format === "structured") parts.push(`You are agent ${input.observation.agent_id}.`, "");
   if (options.memory.summary === "facts") {
-    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation), "");
+    parts.push("Summary of your experience so far (compiled from your own observations):", factsSummary(input.history, input.observation, options.memory.format === "structured" ? "labeled" : "pair"), "");
   }
-  if (recent.length > 0) {
+  if (recent.length > 0 && options.memory.format === "structured") {
+    // Each past turn as the changes since the agent's previous turn (full observation only without one).
+    const previous = new Map(input.history.map((entry, i) => [entry, input.history[i - 1]]));
+    parts.push(
+      "Your recent history (oldest first; each turn lists what changed in your observation since your previous turn):",
+      ...recent.map((entry) => {
+        const prev = previous.get(entry);
+        const changes = prev ? observationChanges(prev.observation, entry.observation) : null;
+        const seen = changes === null ? renderObservation(entry) : `Turn ${entry.turn}: ${changes.length ? changes.join("; ") : "no change"}`;
+        return `${seen}\nYour action: ${renderAction(entry)}`;
+      }),
+      "",
+    );
+  } else if (recent.length > 0) {
     parts.push(
       "Your recent history (oldest first):",
       ...recent.map((entry) => `${renderObservation(entry)}\nYour action: ${renderAction(entry)}`),

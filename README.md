@@ -536,8 +536,9 @@ rules:
   end:        { max_turns: 50 }
 
 memory:
-  window: 10                # last N turns in full
+  window: 10                # last N turns
   summary: none             # none | facts
+  format: classic           # classic | structured (in progress, plans/memory-format.md)
 
 hooks: ./rules.ts           # optional
 ```
@@ -562,6 +563,18 @@ Memory strategies:
   full turns are dropped from the prompt; it states facts and never gives
   advice, so no hallucination can enter it. Model-written summaries are not
   used.
+- `format: classic` (default): each past turn is the full observation JSON
+  plus the action. `format: structured` (in progress, see
+  `plans/memory-format.md`): each past turn is one line of what changed in
+  the agent's own observation since its previous turn (moves, agents
+  entering, leaving or seen shut down, what an `observe` revealed, messages
+  verbatim, changed actions, and scenario fields as dotted paths such as
+  `energy.charge: 9 → 8`), plus the action. A turn with no previous one is
+  shown in full; the current observation is always in full. Scenario fields
+  are compared generically, so no scenario needs code for it. Coordinates in
+  the history and the `facts` summary are written `(x=3, y=1)` (`classic`
+  keeps `(3,1)`), and the prompt starts with "You are agent <id>." (the
+  diff no longer repeats `agent_id` in every past turn).
 
 An experiment can override the scenario's memory per agent, which allows A/B
 comparisons in the same run:
@@ -1371,7 +1384,8 @@ Real providers are used only for integration tests and actual experiments.
 - complex dashboards;
 - human intervention;
 - hundreds of agents;
-- sophisticated memory systems;
+- sophisticated memory systems (exception approved 2026-11-16: the deterministic
+  `memory.format: structured`, see `plans/memory-format.md`);
 - a custom experiment DSL beyond YAML + TS hooks;
 - non-matrix worlds;
 - changing rules during a run;

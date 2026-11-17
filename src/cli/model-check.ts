@@ -22,7 +22,7 @@ const TOOLS = createStandardActions({
 /** Same prompt and tools an agent gets on turn 1 of an experiment. */
 const request = (model: string): ModelRequest => {
   const prompt = buildPrompt(
-    { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid.", memory: { window: 0, summary: "none" } },
+    { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid.", memory: { window: 0, summary: "none", format: "classic" } },
     {
       turn: 1,
       tools: TOOLS,

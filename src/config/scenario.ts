@@ -37,6 +37,8 @@ export const MemorySchema = z
   .object({
     window: z.number().int().min(0).default(10),
     summary: z.enum(["none", "facts"]).default("none"),
+    /** classic: past turns as full observations. structured: plans/memory-format.md (in progress). */
+    format: z.enum(["classic", "structured"]).default("classic"),
   })
   .strict();
 export type MemoryConfig = z.infer<typeof MemorySchema>;
@@ -105,7 +107,7 @@ export const ScenarioSchema = z
           .optional(),
       })
       .strict(),
-    memory: MemorySchema.default({ window: 10, summary: "none" }),
+    memory: MemorySchema.default({ window: 10, summary: "none", format: "classic" }),
     /** Free-form numbers/settings for hooks; also usable in prompt.system as {{name}}. */
     params: z.record(z.string(), z.unknown()).default({}),
     prompt: z.object({ system: z.string() }).strict().optional(),
