@@ -370,6 +370,23 @@ or movement.
 
 ### Stage 5: A/B batch
 
+Prepared (2026-11-17): `batches/memory-format-power-struggle.yaml`, with
+conditions `classic`, `structured` and `structured_json`
+(`experiments/power-struggle-bonsai-structured-json.yaml`, `memory.now:
+json`), seeds 1–3, about 25–30 minutes per run. The control is a config
+value because batch conditions are experiment files. It is documented as
+an A/B control only.
+
+Urn check (2026-11-17, `urn-bonsai-structured/00001` vs `urn-bonsai/00002`,
+n = 1 each): unanimous vote again (77; classic 7), 100% tool calls, 1
+rejection each, no ghost sightings, no identity loss, `urn.*` fields read
+correctly. Tokens per call about equal (3406 vs 3436): the conversation
+dominates the urn prompt. New behavior: agents invented a physical "queue"
+on the urn and stepped on and off it (55 moves vs 6), which cost one
+opening (b1 voted off the urn on turn 16). The scenario prompt never says
+cells are shared. The user classified this as scenario interpretation, not
+hallucination, and irrelevant to what the urn measures: no change.
+
 A batch per scenario (power-struggle, urn) with conditions `classic`,
 `structured`, and `structured` with the current observation still in
 JSON. The third condition is internal to this experiment (not a user

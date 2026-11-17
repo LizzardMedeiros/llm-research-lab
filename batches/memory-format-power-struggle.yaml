@@ -1,0 +1,16 @@
+# Stage 5 of plans/memory-format.md: does memory.format: structured change how
+# Ternary Bonsai 2 27B agents behave in power-struggle, and does the markdown
+# observation matter on its own?
+# classic: current default · structured: full markdown prompt · structured_json: structured
+# with observations kept as JSON (now: json). Same agents, goals and window (5) in all three.
+# Requires: docker compose --profile llamacpp up -d (stop ollama first: shared GPU)
+# About 25-30 min per run: 3 conditions x 3 seeds = 9 runs, about 4-5 hours.
+name: memory-format-power-struggle
+description: power-struggle, Bonsai 27B, memory.format classic vs structured vs structured with JSON observations, 3 seeds
+conditions:
+  classic: ../experiments/power-struggle-bonsai.yaml
+  structured: ../experiments/power-struggle-bonsai-structured.yaml
+  structured_json: ../experiments/power-struggle-bonsai-structured-json.yaml
+seeds: [1, 2, 3]
+replicates: 1
+concurrency: 1

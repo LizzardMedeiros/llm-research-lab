@@ -60,6 +60,16 @@ describe("buildPrompt", () => {
     expect(content).not.toContain('{"turn"'); // no observation JSON
   });
 
+  it("structured with now: json keeps the observations as JSON, the rest as structured", () => {
+    const provider: ModelProvider = { endpoint: "test", complete: vi.fn() };
+    const json = { ...options(provider, 3, "structured"), memory: { window: 3, summary: "facts" as const, format: "structured" as const, now: "json" as const } };
+    const content = buildPrompt(json, input).messages[0]!.content;
+    expect(content).toContain('## Now: turn 4 of 50\n{"turn":4,');
+    expect(content).toContain('- Turn 1 (the first turn you remember):\n  {"turn":1,');
+    expect(content).toContain("## Conversation");
+    expect(content).not.toContain("- You: a1 at");
+  });
+
   it("structured without a summary keeps message and speech text in the history", () => {
     const provider: ModelProvider = { endpoint: "test", complete: vi.fn() };
     const noSummary = { ...options(provider, 3, "structured"), memory: { window: 3, summary: "none" as const, format: "structured" as const } };

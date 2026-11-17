@@ -584,7 +584,8 @@ Memory strategies:
   Scenario fields are rendered by shape (dotted paths, lists), never by
   name, so no scenario needs code for it. Agent-written text is always
   JSON-quoted on one line. The observation object logged in
-  `agent.observation` is the same in both formats. Without
+  `agent.observation` is the same in both formats. `now: json` (A/B
+  control only) keeps observations as JSON inside the structured layout. Without
   `summary: facts` there is no conversation section, and the history keeps
   message and speech text.
 

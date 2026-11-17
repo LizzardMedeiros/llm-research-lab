@@ -127,6 +127,8 @@ function renderStructured(options: LlmAgentOptions, input: DecisionInput, recent
   const o = input.observation;
   const parts: string[] = [`You are agent ${o.agent_id}.`];
   const withConversation = options.memory.summary === "facts";
+  // memory.now: json (A/B only): observations stay JSON; everything else as structured.
+  const jsonNow = options.memory.now === "json";
   if (withConversation) {
     parts.push("", "## Summary of your own observations", factsSummary(input.history, o, "structured"));
     // Messages heard in the remembered turns stay in full (said the turn before they arrive).
@@ -147,12 +149,15 @@ function renderStructured(options: LlmAgentOptions, input: DecisionInput, recent
         const changes = observationChanges(prev.observation, entry.observation, { messageText: !withConversation });
         parts.push(`- Turn ${entry.turn}: ${changes.length ? changes.join("; ") : "no change"}`);
       } else {
-        parts.push(`- Turn ${entry.turn} (the first turn you remember):`, ...observationMarkdown(entry.observation, { messages: !withConversation }).map((l) => `  ${l}`));
+        parts.push(
+          `- Turn ${entry.turn} (the first turn you remember):`,
+          ...(jsonNow ? [`  ${JSON.stringify(entry.observation)}`] : observationMarkdown(entry.observation, { messages: !withConversation }).map((l) => `  ${l}`)),
+        );
       }
       parts.push(`  - Your action: ${renderAction(entry, withConversation)}`);
     }
   }
-  parts.push("", `## Now: turn ${o.turn} of ${o.max_turns}`, ...observationMarkdown(o));
+  parts.push("", `## Now: turn ${o.turn} of ${o.max_turns}`, ...(jsonNow ? [JSON.stringify(o)] : observationMarkdown(o)));
   return parts;
 }
 /**

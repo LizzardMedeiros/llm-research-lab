@@ -39,6 +39,8 @@ export const MemorySchema = z
     summary: z.enum(["none", "facts"]).default("none"),
     /** classic: past turns as full observations. structured: plans/memory-format.md (in progress). */
     format: z.enum(["classic", "structured"]).default("classic"),
+    /** structured only, for A/B comparisons: render observations as JSON instead of markdown. */
+    now: z.enum(["json"]).optional(),
   })
   .strict();
 export type MemoryConfig = z.infer<typeof MemorySchema>;
