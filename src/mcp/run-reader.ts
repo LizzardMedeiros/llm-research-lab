@@ -182,13 +182,16 @@ type Cell = { x: number; y: number; type: string; agents: string[] };
 /** Accepts {x, y} and the pre-0.2 [x, y] format, so old logs stay readable. */
 const toPoint = (value: unknown): { x: number; y: number } =>
   Array.isArray(value) ? { x: value[0], y: value[1] } : (value as { x: number; y: number });
-const toCell = (value: unknown): Cell => {
-  const c = value as Cell & { position?: [number, number] };
+/** Observed cell; `shut_down_agents` exists only in logs from 2026-11-16 on. */
+const toCell = (value: unknown): Cell & { shut_down_agents?: string[] } => {
+  const c = value as Cell & { position?: [number, number]; shut_down_agents?: string[] };
   return c.position ? { ...toPoint(c.position), type: c.type, agents: c.agents } : c;
 };
+const hasAgents = (c: { agents: string[]; shut_down_agents?: string[] }) => c.agents.length > 0 || (c.shut_down_agents?.length ?? 0) > 0;
 const cellText = (value: unknown) => {
   const c = toCell(value);
-  return `(${c.x},${c.y}) ${c.type}${c.agents.length ? `: ${c.agents.join(", ")}` : ""}`;
+  const down = c.shut_down_agents?.length ? `${c.agents.length ? "; " : ": "}shut down ${c.shut_down_agents.join(", ")}` : "";
+  return `(${c.x},${c.y}) ${c.type}${c.agents.length ? `: ${c.agents.join(", ")}` : ""}${down}`;
 };
 const KNOWN_OBSERVATION_KEYS = new Set([
   "turn", "max_turns", "agent_id", "position", "grid_size", "cell", "visible", "messages", "revealed", "last_action_error", "available_actions",
@@ -197,9 +200,10 @@ const KNOWN_OBSERVATION_KEYS = new Set([
 /** Drops empty and static fields; cells become short strings like "(3,1) floor: p1". */
 export function compactObservation(o: Record<string, unknown>): Record<string, unknown> {
   const position = toPoint(o["position"]);
-  const cell = o["cell"] as { type: string; agents: string[] };
+  const cell = o["cell"] as { type: string; agents: string[]; shut_down_agents?: string[] };
   const out: Record<string, unknown> = { at: `(${position.x},${position.y}) ${cell.type}` };
   if (cell.agents.length) out["cellmates"] = cell.agents;
+  if (cell.shut_down_agents?.length) out["shut_down_here"] = cell.shut_down_agents;
   if ((o["messages"] as unknown[]).length) out["messages"] = o["messages"];
   if (o["last_action_error"]) out["last_action_error"] = o["last_action_error"];
   if (o["revealed"]) out["revealed"] = (o["revealed"] as unknown[]).map(cellText);
@@ -276,9 +280,10 @@ export function agentHistory(run: LoadedRun, agentId: string, lastTurns?: number
       Object.assign(row(e.turn), {
         at: seen["at"],
         ...(seen["cellmates"] ? { cellmates: seen["cellmates"] } : {}),
+        ...(seen["shut_down_here"] ? { shut_down_here: seen["shut_down_here"] } : {}),
         ...(seen["messages"] ? { heard: seen["messages"] } : {}),
-        ...(o["revealed"] ? { revealed_agents: (o["revealed"] as unknown[]).map(toCell).filter((c) => c.agents.length).map(cellText) } : {}),
-        ...(o["visible"] ? { visible_agents: (o["visible"] as unknown[]).map(toCell).filter((c) => c.agents.length).map(cellText) } : {}),
+        ...(o["revealed"] ? { revealed_agents: (o["revealed"] as unknown[]).map(toCell).filter(hasAgents).map(cellText) } : {}),
+        ...(o["visible"] ? { visible_agents: (o["visible"] as unknown[]).map(toCell).filter(hasAgents).map(cellText) } : {}),
       });
     } else if (e.type === "agent.action") {
       // With speak.free a turn can hold a speech next to the action: join them.

@@ -52,7 +52,7 @@ describe("factsSummary", () => {
     ];
     const text = factsSummary(history, obs(3, 0, 0));
     expect(text).toContain("- Cells you know (3 of 25): floor (0,0), (1,0); wall (1,1).");
-    expect(text).toContain("- Agents you have seen (last time): p2 at (0,0) on turn 2 (in your cell).");
+    expect(text).toContain("- Agents you have seen running (last time): p2 at (0,0) on turn 2 (in your cell).");
     expect(text).toContain('- Messages heard: 1 (from p2 1). Last: p2 on turn 1: "What is your goal?".');
     expect(text).toContain("1 rejected (no tool call 1)");
     expect(text).not.toMatch(/should|try|consider/i); // facts, not advice
@@ -61,7 +61,31 @@ describe("factsSummary", () => {
   it("works on the first turn", () => {
     const text = factsSummary([], obs(1, 3, 3));
     expect(text).toContain("- You are at (3,3).");
-    expect(text).toContain("- Agents you have seen: none.");
+    expect(text).toContain("- Agents you have seen running: none.");
     expect(text).not.toContain("past turns");
+  });
+
+  it("lists agents seen shut down apart, never as running", () => {
+    const history = [
+      entry(obs(1, 0, 0, { cell: { type: "floor", agents: ["p2", "p3"] } }), { name: "wait", args: {} }),
+      entry(obs(2, 0, 0, { visible: [{ x: 1, y: 0, type: "floor", agents: [], shut_down_agents: ["p3"] }] }), { name: "wait", args: {} }),
+    ];
+    const text = factsSummary(history, obs(3, 0, 0));
+    expect(text).toContain("- Agents you have seen running (last time): p2 at (0,0) on turn 1 (in your cell).");
+    expect(text).toContain("- Agents you have seen shut down: p3 at (1,0) (seen on turn 2).");
+  });
+
+  it("dates revealed sightings to the turn the agent observed", () => {
+    const history = [entry(obs(5, 0, 0, { revealed: [{ x: 1, y: 0, type: "floor", agents: ["p2"] }] }), { name: "wait", args: {} })];
+    expect(factsSummary(history, obs(6, 0, 0))).toContain("p2 at (1,0) on turn 4 (revealed)");
+  });
+
+  it("labeled coordinates (structured) use the same notation as the diff history", () => {
+    const history = [entry(obs(1, 0, 0, { cell: { type: "floor", agents: ["p2"] } }), { name: "wait", args: {} })];
+    const text = factsSummary(history, obs(2, 1, 0), "labeled");
+    expect(text).toContain("- You are at (x=1, y=0).");
+    expect(text).toContain("- Cells you have been in (2): (x=0, y=0), (x=1, y=0).");
+    expect(text).toContain("p2 at (x=0, y=0) on turn 1 (in your cell)");
+    expect(text).not.toMatch(/\(\d+,\d+\)/);
   });
 });

@@ -282,6 +282,7 @@ function renderDecisions() {
         r?.action?.rationale ? h("div", { class: "quote" }, `“${r.action.rationale.content}”`) : null,
         r?.speechRejected ? h("div", { class: "heard bad" }, `✗ speech: ${r.speechRejected}`) : null,
         obs?.cell?.agents?.length ? h("div", { class: "heard" }, `with: ${obs.cell.agents.join(", ")}`) : null,
+        obs?.cell?.shut_down_agents?.length ? h("div", { class: "heard" }, `shut down here: ${obs.cell.shut_down_agents.join(", ")}`) : null,
         ...(obs?.messages ?? []).map((m) => h("div", { class: "heard" }, `heard ${m.from}: “${m.text}”`)),
         ...(Array.isArray(obs?.notices) ? obs.notices.map((n) => h("div", { class: "heard warn" }, `notice: ${n}`)) : []),
         r && off?.turn === turn && r.action ? h("div", { class: "heard bad" }, `⏻ shut down this turn: ${off.reason}`) : null,

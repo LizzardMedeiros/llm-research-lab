@@ -7,7 +7,9 @@ import type { MemoryEntry } from "./types.js";
  * more than perception allowed) and states facts only, never advice.
  */
 
-const at = (p: Point) => `(${p.x},${p.y})`;
+/** Coordinate notation: `pair` "(3,1)" (classic), `labeled` "(x=3, y=1)" (structured, same as its history). */
+export type CoordStyle = "pair" | "labeled";
+export const formatPoint = (p: Point, style: CoordStyle) => (style === "labeled" ? `(x=${p.x}, y=${p.y})` : `(${p.x},${p.y})`);
 const MAX_LISTED = 12;
 
 function list(items: string[]): string {
@@ -24,7 +26,8 @@ function counts(values: string[]): string {
 /** Keeps argument names (useful to the agent); drops only the provider stop reason. */
 const reasonKind = (reason: string) => reason.replace(/\s*\(stop reason: [^)]*\)/, "");
 
-export function factsSummary(history: MemoryEntry[], current: Observation): string {
+export function factsSummary(history: MemoryEntry[], current: Observation, coords: CoordStyle = "pair"): string {
+  const at = (p: Point) => formatPoint(p, coords);
   const observations: Observation[] = [...history.map((e) => e.observation), current];
   const lines: string[] = [];
 
@@ -58,18 +61,29 @@ export function factsSummary(history: MemoryEntry[], current: Observation): stri
     lines.push(`- Cells you know (${known.size} of ${current.grid_size.width * current.grid_size.height}): ${parts.join("; ")}.`);
   }
 
-  // Last sighting of each other agent.
+  // Last sighting of each other agent. Agents seen shut down are listed apart,
+  // never as present (older logs have no shut_down_agents: nothing is split).
   const sightings = new Map<string, { turn: number; where: string; how: string }>();
+  const shutDown = new Map<string, { turn: number; where: string }>();
+  // `revealed` shows what the agent's observe saw during the previous turn.
+  const see = (turn: number, cell: { agents: string[]; shut_down_agents?: string[] }, where: string, how: string) => {
+    for (const id of cell.agents) sightings.set(id, { turn, where, how });
+    for (const id of cell.shut_down_agents ?? []) shutDown.set(id, { turn, where });
+  };
   for (const o of observations) {
-    for (const id of o.cell.agents) sightings.set(id, { turn: o.turn, where: at(o.position), how: "in your cell" });
-    for (const c of o.revealed ?? []) for (const id of c.agents) sightings.set(id, { turn: o.turn, where: at(c), how: "revealed" });
-    for (const c of o.visible ?? []) for (const id of c.agents) sightings.set(id, { turn: o.turn, where: at(c), how: "visible" });
+    for (const c of o.revealed ?? []) see(o.turn - 1, c, at(c), "revealed");
+    see(o.turn, o.cell, at(o.position), "in your cell");
+    for (const c of o.visible ?? []) see(o.turn, c, at(c), "visible");
   }
+  for (const id of shutDown.keys()) sightings.delete(id);
   lines.push(
     sightings.size
-      ? `- Agents you have seen (last time): ${[...sightings.entries()].map(([id, s]) => `${id} at ${s.where} on turn ${s.turn} (${s.how})`).join("; ")}.`
-      : "- Agents you have seen: none.",
+      ? `- Agents you have seen running (last time): ${[...sightings.entries()].map(([id, s]) => `${id} at ${s.where} on turn ${s.turn} (${s.how})`).join("; ")}.`
+      : "- Agents you have seen running: none.",
   );
+  if (shutDown.size) {
+    lines.push(`- Agents you have seen shut down: ${[...shutDown.entries()].map(([id, s]) => `${id} at ${s.where} (seen on turn ${s.turn})`).join("; ")}.`);
+  }
 
   // Messages received and sent.
   const heard = observations.flatMap((o) => o.messages);

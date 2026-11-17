@@ -481,6 +481,14 @@ pairs: models confuse `[x, y]` with `[row, column]`. `revealed` appears after
 an `observe`; `visible` appears when perception reaches beyond the agent's own
 cell.
 
+A cell's `agents` lists only running agents. An agent that shut down stays
+on its cell, marked under `shut_down_agents` (present only when non-empty),
+e.g. `{ "x": 1, "y": 2, "type": "floor", "agents": ["b2"], "shut_down_agents": ["b5"] }`.
+`revealed` cells show what the `observe` saw during the previous turn: an
+agent that shut down at the end of that turn still shows as running there.
+Logs before 2026-11-16 listed shut-down agents in `agents`; readers accept both.
+The `facts` summary lists agents seen shut down apart from those seen running.
+
 ## Action
 
 An agent produces an action through a tool call:

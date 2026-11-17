@@ -85,6 +85,13 @@ describe("run reader", () => {
     });
     const legacy = { ...current, position: [2, 1], revealed: [{ position: [3, 1], type: "floor", agents: ["c"] }] };
     expect(compactObservation(legacy)).toMatchObject({ at: "(2,1) floor", revealed: ["(3,1) floor: c"] });
+    const marked = {
+      ...current,
+      cell: { type: "floor", agents: [], shut_down_agents: ["d"] },
+      revealed: [{ x: 3, y: 1, type: "floor", agents: ["c"], shut_down_agents: ["e"] }, { x: 1, y: 1, type: "floor", agents: [], shut_down_agents: ["f"] }],
+    };
+    expect(compactObservation(marked)).toMatchObject({ shut_down_here: ["d"], revealed: ["(3,1) floor: c; shut down e", "(1,1) floor: shut down f"] });
+    expect(compactObservation(marked)).not.toHaveProperty("cellmates");
   });
 
   it("groups rejection reasons without losing their kind", () => {

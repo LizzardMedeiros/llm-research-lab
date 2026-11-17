@@ -70,6 +70,8 @@ spec; read it before architectural changes and keep it in sync with decisions.
     reason, and the reason appears in the agent's next observation;
   - observations use explicit coordinates (`position: {x, y}`,
     `grid_size: {width, height}`, cells `{x, y, type, agents}`), never bare pairs;
+    shut-down agents stay on their cell, marked under `shut_down_agents`
+    (never listed in `agents`);
   - stable event envelope persisted as JSONL;
   - single `ModelProvider` interface;
   - all environment randomness comes from the seeded RNG — never `Math.random()`;
