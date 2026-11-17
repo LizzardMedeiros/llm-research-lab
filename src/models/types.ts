@@ -71,7 +71,28 @@ export interface ModelResponse {
   latencyMs: number;
 }
 
+/**
+ * Failures that may be retried within the same agent turn:
+ * - context_overflow: the server rejected the prompt as too long; the retry
+ *   drops older history turns;
+ * - output_truncated: the completion hit max tokens before a usable tool call.
+ */
+export const TURN_RETRY_REASONS = ["context_overflow", "output_truncated"] as const;
+export type TurnRetryReason = (typeof TURN_RETRY_REASONS)[number];
+
+export interface TurnRetryPolicy {
+  /** Model calls per agent turn, including the first. */
+  maxAttempts: number;
+  on: TurnRetryReason[];
+}
+
 export interface ModelProvider {
   readonly endpoint: string;
+  /** Server/model context window when configured for this endpoint. */
+  readonly contextTokens?: number;
+  /** Configured maximum completion size. */
+  readonly maxOutputTokens?: number;
+  /** Extra model calls allowed within one agent turn (endpoint `turn_retry`). */
+  readonly turnRetry?: TurnRetryPolicy;
   complete(request: ModelRequest): Promise<ModelResponse>;
 }

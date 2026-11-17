@@ -21,8 +21,8 @@ let eventsDir: string;
 
 beforeAll(async () => {
   eventsDir = mkdtempSync(join(tmpdir(), "lab-events-"));
-  await runExperiment("experiments/first-contact-mock.yaml", { eventsDir });
-  await runExperiment("experiments/first-contact-mock.yaml", { eventsDir });
+  await runExperiment("tests/fixtures/first-contact-mock.yaml", { eventsDir });
+  await runExperiment("tests/fixtures/first-contact-mock.yaml", { eventsDir });
 });
 
 describe("run reader", () => {

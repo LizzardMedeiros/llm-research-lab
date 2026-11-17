@@ -49,9 +49,12 @@ spec; read it before architectural changes and keep it in sync with decisions.
 - Fixed engine mechanics (only these):
   - world is always a 2D matrix of cells addressed by `(x, y)`;
   - turn loop: observation → LLM → action (tool call) → validate → apply → events;
-    one action per turn, except that a scenario with `speak.free` lets the
-    same response also speak (README §4); readers key rejections by
-    turn + agent + action name;
+    one action per agent per turn, except that a scenario with `speak.free`
+    lets the same response also speak (README §4); readers key rejections by
+    turn + agent + action name. The model may be called more than once in a
+    turn only for an eligible failure (endpoint `turn_retry`: context
+    overflow, output truncated before a usable tool call); only the last
+    response becomes the action, and every attempt is logged;
   - every action is exposed to the model as a tool;
   - standard actions `move`, `speak`, `observe`, `wait` live in `src/actions/`
     with fixed tool schemas and semantics (README §4). Scenarios only enable
@@ -203,8 +206,11 @@ spec; read it before architectural changes and keep it in sync with decisions.
   protocol adapter only for a genuinely different wire protocol. Keep README
   §15 (Adding Models) and §14 (Getting Started) in sync with such changes.
 - Agents pick `provider: <endpoint>` and `model: <name>` independently.
-- One request per agent turn; tool results are never replayed, so adapters
-  have no tool loop.
+- One action per agent turn. Retries within a turn live in `LlmAgent`
+  (`turn_retry`), never in the engine; eligible reasons are infra failures,
+  not model behavior (no tool call, invalid args and rejected actions are
+  measured, not retried). Tool results are never replayed, so adapters have
+  no tool loop.
 - Claude: never send `temperature` (current API rejects it); `tool_choice`
   stays `auto`; no server-side refusal fallback (it would break per-agent
   model attribution). Refusals are logged as `stopReason: "refusal"`.

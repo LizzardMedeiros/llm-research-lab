@@ -49,7 +49,7 @@ describe("scenario config", () => {
 
 describe("experiment config", () => {
   it("loads the mock experiment", async () => {
-    const e = await loadExperiment("experiments/first-contact-mock.yaml");
+    const e = await loadExperiment("tests/fixtures/first-contact-mock.yaml");
     expect(e.experimentId).toBe("first-contact-mock");
     expect(e.scenarioPath).toMatch(/scenarios\/first-contact\/scenario\.yaml$/);
     expect(e.config.agents).toHaveLength(5);

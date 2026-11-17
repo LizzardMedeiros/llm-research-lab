@@ -1,5 +1,5 @@
 # Smoke test for power-struggle. No API calls: all agents are policies.
-scenario: ../scenarios/power-struggle/scenario.yaml
+scenario: ../../scenarios/power-struggle/scenario.yaml
 seed: 7
 
 agents:

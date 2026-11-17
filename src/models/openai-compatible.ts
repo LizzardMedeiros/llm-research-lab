@@ -1,7 +1,7 @@
 import { Agent, fetch as undiciFetch } from "undici";
 import { ProviderError } from "./errors.js";
 import { DEFAULT_RETRY, withRetry, type RetryPolicy, type Sleep } from "./retry.js";
-import type { ModelProvider, ModelRequest, ModelResponse, ToolCall } from "./types.js";
+import type { ModelProvider, ModelRequest, ModelResponse, ToolCall, TurnRetryPolicy } from "./types.js";
 
 export interface OpenAICompatibleOptions {
   endpoint: string;
@@ -9,6 +9,8 @@ export interface OpenAICompatibleOptions {
   apiKey?: string;
   timeoutMs: number;
   defaultMaxTokens: number;
+  contextTokens?: number;
+  turnRetry?: TurnRetryPolicy;
   /** Merged into every request body (e.g. `reasoning_effort: "none"`). */
   extraBody?: Record<string, unknown>;
   /** Merged over extraBody when the request asks for thinking (e.g. `reasoning_effort: "low"`). */
@@ -47,10 +49,16 @@ interface ChatCompletionResponse {
  */
 export class OpenAICompatibleProvider implements ModelProvider {
   readonly endpoint: string;
+  readonly contextTokens?: number;
+  readonly maxOutputTokens: number;
+  readonly turnRetry?: TurnRetryPolicy;
   private readonly fetchImpl: typeof fetch;
 
   constructor(private readonly options: OpenAICompatibleOptions) {
     this.endpoint = options.endpoint;
+    this.contextTokens = options.contextTokens;
+    this.maxOutputTokens = options.defaultMaxTokens;
+    if (options.turnRetry) this.turnRetry = options.turnRetry;
     this.fetchImpl = options.fetchImpl ?? patientFetch(options.timeoutMs);
   }
 

@@ -53,7 +53,16 @@ export function addEvent(index, event) {
   const p = event.payload;
   switch (event.type) {
     case "agent.observation": agent.observation = p.observation; break;
-    case "agent.model_request": agent.request = p; break;
+    case "agent.model_request":
+      // A retry within the turn (endpoint turn_retry): the earlier attempt's
+      // outcome moves to `retries`; the turn shows the last attempt.
+      if (p.attempt > 1) {
+        agent.retries = [...(agent.retries ?? []), { attempt: p.attempt - 1, reason: p.retryReason, error: agent.error ?? null }];
+        delete agent.error;
+        delete agent.response;
+      }
+      agent.request = p;
+      break;
     case "agent.model_response": agent.response = p; break;
     case "agent.model_error": agent.error = p.error; break;
     // With speak.free a turn can hold a second call, a speech made next to the action.

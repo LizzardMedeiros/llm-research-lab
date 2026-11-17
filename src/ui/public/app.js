@@ -366,6 +366,9 @@ function stepView(info, r, turn) {
       ),
     );
   }
+  for (const retry of r.retries ?? []) {
+    blocks.push(h("p", { class: "muted" }, `Attempt ${retry.attempt} retried (${retry.reason})${retry.error ? `: ${retry.error}` : ""}`));
+  }
   if (r.error) blocks.push(h("p", { class: "bad" }, `Model error: ${r.error}`));
   if (!r.request && !r.error) blocks.push(h("p", { class: "muted" }, "Policy agent: decided by rules, no model call."));
   return blocks;

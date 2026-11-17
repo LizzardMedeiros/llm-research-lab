@@ -27,7 +27,7 @@ suite("runBatch", () => {
   it("runs conditions × seeds × replicates, records batch membership, and reports", async () => {
     const t = setup({
       name: "smoke",
-      conditions: { contact: resolve("experiments/first-contact-mock.yaml"), power: resolve("experiments/power-struggle-mock.yaml") },
+      conditions: { contact: resolve("tests/fixtures/first-contact-mock.yaml"), power: resolve("tests/fixtures/power-struggle-mock.yaml") },
       seeds: [1, 2],
     });
     const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
@@ -55,7 +55,7 @@ suite("runBatch", () => {
   });
 
   it("resumes: finished runs are not repeated", async () => {
-    const t = setup({ name: "resume", conditions: { contact: resolve("experiments/first-contact-mock.yaml") }, seeds: [7] });
+    const t = setup({ name: "resume", conditions: { contact: resolve("tests/fixtures/first-contact-mock.yaml") }, seeds: [7] });
     const first = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
     const second = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
     expect(second.manifest.runs[0]!.ref).toBe(first.manifest.runs[0]!.ref);
@@ -63,7 +63,7 @@ suite("runBatch", () => {
   });
 
   it("replicates of the same seed are identical for policy agents", async () => {
-    const t = setup({ name: "replicas", conditions: { contact: resolve("experiments/first-contact-mock.yaml") }, seeds: [3], replicates: 2 });
+    const t = setup({ name: "replicas", conditions: { contact: resolve("tests/fixtures/first-contact-mock.yaml") }, seeds: [3], replicates: 2 });
     const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
     const strip = (ref: string) =>
       parseEvents(readFileSync(join(t.eventsDir, `${ref}.jsonl`), "utf8")).map(({ run_id: _r, event_id: _e, payload, ...rest }) => ({
@@ -80,7 +80,7 @@ suite("runBatch", () => {
       broken,
       JSON.stringify({ scenario: resolve("scenarios/first-contact/scenario.yaml"), seed: 1, agents: [{ id: "x", provider: "nope", model: "m" }] }),
     );
-    writeFileSync(t.batchFile, JSON.stringify({ name: "mixed", conditions: { ok: resolve("experiments/first-contact-mock.yaml"), broken }, seeds: [1] }));
+    writeFileSync(t.batchFile, JSON.stringify({ name: "mixed", conditions: { ok: resolve("tests/fixtures/first-contact-mock.yaml"), broken }, seeds: [1] }));
     const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
     expect(manifest.runs.map((r) => r.status)).toEqual(["finished", "failed"]);
     expect(manifest.runs[1]!.error).toMatch(/Unknown provider endpoint "nope"/);
@@ -95,7 +95,7 @@ suite("action and shutdown metrics", () => {
     expect(reasonKey("disabled by b3, b5", ["b3", "b5"])).toBe("disabled_by");
     expect(reasonKey("ran out of energy", ["b1"])).toBe("ran_out_of_energy");
 
-    const t = setup({ name: "acts", conditions: { power: resolve("experiments/power-struggle-mock.yaml") }, seeds: [1, 2] });
+    const t = setup({ name: "acts", conditions: { power: resolve("tests/fixtures/power-struggle-mock.yaml") }, seeds: [1, 2] });
     const { manifest } = await runBatch(t.batchFile, { eventsDir: t.eventsDir, batchesDir: t.batchesDir, ...fixedClock });
     const { runMetrics } = await import("../../src/batch/metrics.js");
     const m = runMetrics(loadRun(t.eventsDir, manifest.runs[0]!.ref));
@@ -119,4 +119,5 @@ suite("action and shutdown metrics", () => {
     ]);
     expect(report.conditions.c!.run["shutdown.disabled_by"]).toMatchObject({ n: 2, mean: 0.5 });
   });
+
 });

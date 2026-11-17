@@ -285,6 +285,13 @@ export function agentHistory(run: LoadedRun, agentId: string, lastTurns?: number
       const r = row(e.turn);
       const call = `${p["action"]} ${JSON.stringify(p["args"])}`;
       Object.assign(r, { action: r["action"] ? `${r["action"]} + ${call}` : call, ...(p["rationale"] ? { rationale: p["rationale"] } : {}) });
+    } else if (e.type === "agent.model_request" && (p["attempt"] as number) > 1) {
+      // Retry within the turn: the earlier attempt's error is no longer the turn's outcome.
+      const r = row(e.turn);
+      const retried = `attempt ${(p["attempt"] as number) - 1}: ${p["retryReason"]}${r["model_error"] ? ` (${r["model_error"]})` : ""}`;
+      delete r["model_error"];
+      delete r["text_without_tool_call"];
+      Object.assign(r, { model_attempts: p["attempt"], retried: r["retried"] ? `${r["retried"]}; ${retried}` : retried });
     } else if (e.type === "agent.model_response") {
       Object.assign(row(e.turn), { latency_ms: p["latencyMs"], ...(!(p["toolCalls"] as unknown[]).length && p["text"] ? { text_without_tool_call: p["text"] } : {}) });
     } else if (e.type === "agent.model_error") {
@@ -319,6 +326,7 @@ export function experimentSummary(run: LoadedRun) {
     const observations = mine.filter((e) => e.type === "agent.observation").map((e) => e.payload["observation"] as Record<string, any>);
     const responses = mine.filter((e) => e.type === "agent.model_response").map((e) => e.payload);
     const errors = mine.filter((e) => e.type === "agent.model_error").length;
+    const retries = mine.filter((e) => e.type === "agent.model_request" && (e.payload["attempt"] as number) > 1).length;
 
     const positions = observations.map((o) => {
       const { x, y } = toPoint(o["position"]);
@@ -349,6 +357,7 @@ export function experimentSummary(run: LoadedRun) {
             model: {
               requests: responses.length + errors,
               errors,
+              retries_within_turn: retries,
               responses_with_tool_call: responses.filter((r) => (r["toolCalls"] as unknown[]).length > 0).length,
               median_latency_ms: latencies[Math.floor(latencies.length / 2)] ?? null,
               tokens: { input: sum("inputTokens"), output: sum("outputTokens") },

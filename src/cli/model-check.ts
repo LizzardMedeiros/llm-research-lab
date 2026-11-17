@@ -20,9 +20,8 @@ const TOOLS = createStandardActions({
 }).map((a) => a.tool);
 
 /** Same prompt and tools an agent gets on turn 1 of an experiment. */
-const request = (model: string): ModelRequest => ({
-  model,
-  ...buildPrompt(
+const request = (model: string): ModelRequest => {
+  const prompt = buildPrompt(
     { agentId: "a1", provider: { endpoint: "check" } as never, model, goal: "Reach the top-left corner of the grid.", memory: { window: 0, summary: "none" } },
     {
       turn: 1,
@@ -40,9 +39,9 @@ const request = (model: string): ModelRequest => ({
         available_actions: TOOLS.map((t) => t.name),
       },
     },
-  ),
-  tools: TOOLS,
-});
+  );
+  return { model, system: prompt.system, messages: prompt.messages, tools: TOOLS };
+};
 
 function verdict(response: ModelResponse): string | null {
   if (response.toolCalls.length === 0) return `no tool call (stop: ${response.stopReason})`;

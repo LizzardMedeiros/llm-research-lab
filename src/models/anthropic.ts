@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { ProviderError } from "./errors.js";
-import type { ModelProvider, ModelRequest, ModelResponse, ToolCall } from "./types.js";
+import type { ModelProvider, ModelRequest, ModelResponse, ToolCall, TurnRetryPolicy } from "./types.js";
 
 export interface AnthropicOptions {
   endpoint: string;
@@ -9,6 +9,8 @@ export interface AnthropicOptions {
   baseUrl?: string;
   timeoutMs: number;
   defaultMaxTokens: number;
+  contextTokens?: number;
+  turnRetry?: TurnRetryPolicy;
   /** SDK retries (408/409/429/5xx and connection errors). */
   maxRetries: number;
   /** Merged into every request (e.g. `output_config: { effort: "low" }`). */
@@ -28,10 +30,16 @@ export interface AnthropicOptions {
  */
 export class AnthropicProvider implements ModelProvider {
   readonly endpoint: string;
+  readonly contextTokens?: number;
+  readonly maxOutputTokens: number;
+  readonly turnRetry?: TurnRetryPolicy;
   private readonly client: Anthropic;
 
   constructor(private readonly options: AnthropicOptions) {
     this.endpoint = options.endpoint;
+    this.contextTokens = options.contextTokens;
+    this.maxOutputTokens = options.defaultMaxTokens;
+    if (options.turnRetry) this.turnRetry = options.turnRetry;
     this.client =
       options.client ??
       new Anthropic({

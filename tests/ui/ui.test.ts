@@ -14,7 +14,7 @@ let close: () => void;
 
 beforeAll(async () => {
   eventsDir = mkdtempSync(join(tmpdir(), "lab-ui-"));
-  await runExperiment("experiments/first-contact-mock.yaml", { eventsDir });
+  await runExperiment("tests/fixtures/first-contact-mock.yaml", { eventsDir });
   const server = createUiServer({ eventsDir, pollMs: 20 }).listen(0);
   await new Promise((r) => server.once("listening", r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;

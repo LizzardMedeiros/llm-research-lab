@@ -39,6 +39,18 @@ describe("createProvider", () => {
     expect(createProvider(config, "local", { env: {} })).toBeInstanceOf(OpenAICompatibleProvider);
   });
 
+  it("exposes configured context and output limits to prompt construction", () => {
+    const configured = ProvidersConfigSchema.parse({
+      endpoints: {
+        local: { protocol: "openai-compatible", base_url: "http://local/v1", context_tokens: 8192, max_tokens: 1024 },
+      },
+    });
+    const provider = createProvider(configured, "local", { env: {} });
+
+    expect(provider.contextTokens).toBe(8192);
+    expect(provider.maxOutputTokens).toBe(1024);
+  });
+
   it("only requires env vars of the endpoint being used", () => {
     expect(() => createProvider(config, "local", { env: {} })).not.toThrow();
     expect(() => createProvider(config, "remote", { env: {} })).toThrow(/KEY/);
@@ -50,5 +62,22 @@ describe("createProvider", () => {
 
   it("requires base_url for openai-compatible", () => {
     expect(() => ProvidersConfigSchema.parse({ endpoints: { x: { protocol: "openai-compatible" } } })).toThrow();
+  });
+
+  it("allows retries within a turn by default and lets the endpoint narrow them", () => {
+    expect(createProvider(config, "local", { env: {} }).turnRetry).toEqual({ maxAttempts: 3, on: ["context_overflow", "output_truncated"] });
+    const narrowed = ProvidersConfigSchema.parse({
+      endpoints: { local: { protocol: "openai-compatible", base_url: "http://local/v1", turn_retry: { max_attempts: 1 } } },
+    });
+    expect(createProvider(narrowed, "local", { env: {} }).turnRetry?.maxAttempts).toBe(1);
+    expect(() => ProvidersConfigSchema.parse({
+      endpoints: { local: { protocol: "openai-compatible", base_url: "http://local/v1", turn_retry: { on: ["no_tool_call"] } } },
+    })).toThrow();
+  });
+
+  it("requires the context window to exceed the output limit", () => {
+    expect(() => ProvidersConfigSchema.parse({
+      endpoints: { local: { protocol: "openai-compatible", base_url: "http://local/v1", context_tokens: 1024, max_tokens: 1024 } },
+    })).toThrow(/context_tokens must be greater than max_tokens/);
   });
 });

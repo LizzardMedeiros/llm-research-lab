@@ -155,7 +155,7 @@ export async function prepareRun(experiment: LoadedExperiment, options: RunOptio
     ? Object.fromEntries(
         Object.entries(providersConfig.endpoints)
           .filter(([name]) => experiment.config.agents.some((a) => a.provider === name))
-          .map(([name, e]) => [name, { protocol: e.protocol, base_url: e.base_url, max_tokens: e.max_tokens, extra_body: e.extra_body }]),
+          .map(([name, e]) => [name, { protocol: e.protocol, base_url: e.base_url, max_tokens: e.max_tokens, context_tokens: e.context_tokens, turn_retry: e.turn_retry, extra_body: e.extra_body }]),
       )
     : {};
 

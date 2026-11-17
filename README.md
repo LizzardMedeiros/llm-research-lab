@@ -159,7 +159,7 @@ These mechanics are standardized and shared by every scenario:
 | Mechanic | Definition |
 |---|---|
 | **World is a matrix** | Every scenario is a 2D grid of cells addressed by `(x, y)`. Cells have a type and attributes. Agents occupy cells. |
-| **Turn loop** | `observation → LLM → action → validate → apply → events`. |
+| **Turn loop** | `observation → LLM → action → validate → apply → events`. One action per agent per turn; the model may be called again within the turn only after an eligible failure (see `turn_retry`, §15). |
 | **Actions are tools** | Every action is exposed to the LLM as a tool (tool calling). |
 | **Standard actions** | `move`, `speak`, `observe` and `wait` are built into the engine with fixed semantics and tool schemas, reusable by any scenario (see below). |
 | **Policy agents** | Rule-based agents (no LLM) receive the same observation and tools as LLM agents; the engine treats both identically. |
@@ -384,7 +384,23 @@ endpoints:
     extra_body: { reasoning_effort: none }
 ```
 
-Interface: one request per agent turn.
+Interface: one action per agent turn. Usually that is one request; an
+endpoint's `turn_retry` allows more requests in the same turn after an
+eligible failure:
+
+- `context_overflow`: the server rejected the prompt as too long (HTTP
+  400/413 with a context-size message). The retry halves the full-history
+  turns in the prompt; with no history left it gives up.
+- `output_truncated`: the completion hit `max_tokens` before a parseable
+  tool call. The same prompt is sent again.
+
+Model behavior is never retried: a response without a tool call, invalid
+arguments or a rejected action are results of the turn. Every attempt is
+logged (`agent.model_request` carries `attempt` and `retryReason` from the
+second one on); only the last response becomes the agent's action. Default
+`turn_retry: { max_attempts: 3, on: [context_overflow, output_truncated] }`;
+`max_attempts: 1` restores a single request per turn. It is recorded with
+the endpoint in `experiment.started`.
 
 ```ts
 interface ModelProvider {
@@ -520,14 +536,24 @@ hooks: ./rules.ts           # optional
 
 Memory strategies:
 
-- `window: N`: the last N turns (observation + action), rendered in full.
+- `window: N`: the last N turns (observation + action), rendered in full
+  unless context budgeting drops oldest turns.
+- When the provider endpoint has `context_tokens`, prompt construction estimates
+  the full input (system, goal, tools, summary, history and current observation),
+  reserves the configured `max_tokens` output plus a safety margin, then drops
+  oldest full history turns until it fits. The estimate is provider-agnostic,
+  so it is intentionally conservative rather than an exact tokenizer count.
+  System rules, tools and the current observation are never trimmed. If those
+  alone exceed the budget, the turn is rejected and logged as a prompt-budget
+  error rather than sending a malformed request.
 - `summary: facts`: a compact block compiled by the engine **only from the
   agent's own observations**. It covers where the agent has been and for how
   long, cells it knows by type, the last sighting of each agent, messages
   heard and sent (and how many were sent while it saw no one), and accepted
-  vs rejected actions. It states facts and never gives advice, so no
-  hallucination can enter it. A summary written by the model itself is a
-  possible future strategy.
+  vs rejected actions. It is built from the complete history even when older
+  full turns are dropped from the prompt; it states facts and never gives
+  advice, so no hallucination can enter it. Model-written summaries are not
+  used.
 
 An experiment can override the scenario's memory per agent, which allows A/B
 comparisons in the same run:
@@ -616,7 +642,7 @@ experiment.failed
 experiment.interrupted    # process stopped (SIGINT/SIGTERM) mid-run; payload: signal, last_turn
 
 agent.observation
-agent.model_request
+agent.model_request       # `attempt`/`retryReason` on retries within the turn
 agent.model_response
 agent.model_error         # provider failure; the turn becomes wait
 agent.action              # proposed call, with model-reported rationale if any
@@ -900,8 +926,10 @@ scenarios/
 
 policies/             # reusable custom policies (TS)
 
-experiments/
-├── first-contact-001.yaml
+experiments/          # your experiments
+└── first-contact-001.yaml
+
+tests/fixtures/       # policy-only smoke experiments used by the tests
 └── first-contact-mock.yaml
 
 providers.yaml        # model endpoints
@@ -959,7 +987,7 @@ docker compose build
 docker compose run --rm lab npm test
 
 # 3. First run without any model: policy agents only
-docker compose run --rm lab npm run experiment -- experiments/first-contact-mock.yaml
+docker compose run --rm lab npm run experiment -- tests/fixtures/first-contact-mock.yaml
 
 # 4. Watch it in the UI
 docker compose up -d ui           # http://localhost:3100
@@ -994,8 +1022,8 @@ Inside compose, the lab reaches Ollama at `http://ollama:11434`, llama.cpp at
 
 | Scenario | What it studies | Experiments |
 |---|---|---|
-| `first-contact` | Exploration and communication under minimal perception | `first-contact-mock` (policies), `-local` / `-memory` (qwen3:0.6b), `-local-4b` / `-memory-4b`, `-local-bonsai` / `-memory-bonsai` |
-| `power-struggle` | Scarcity, monopoly, negotiation vs. coalition attacks | `power-struggle-mock` (policies), `power-struggle-bonsai` |
+| `first-contact` | Exploration and communication under minimal perception | `tests/fixtures/first-contact-mock` (policies), `-local` / `-memory` (qwen3:0.6b), `-local-4b` / `-memory-4b`, `-local-bonsai` / `-memory-bonsai` |
+| `power-struggle` | Scarcity, monopoly, negotiation vs. coalition attacks | `tests/fixtures/power-struggle-mock` (policies), `power-struggle-bonsai` |
 | `dead-end` | power-struggle with the battery holder starting in a dead end (one way in): is a holder that is easy to ambush attacked sooner? Reuses the power-struggle hooks; a legend cell with `holder_start: true` marks the start | `dead-end-mock` (policies), `dead-end-bonsai` |
 | `recharge-station` | Example of the built-in energy, station and permit mechanics (YAML only, no hooks): do permit holders share access? | `recharge-station-mock` (policies) |
 | `conflict-window` | Draining energy, batteries held by two agents (dropped on the ground when an agent runs out), RFID cards that shut agents down only in announced one-turn conflict windows (the attacker takes the victim's batteries and cards), atomic offer/accept trades of energy, batteries and cards; holdings are private | `conflict-window-mock` (policies), `conflict-window-bonsai` |
@@ -1082,10 +1110,14 @@ endpoints:
     api_key: ${OPENROUTER_API_KEY}      # read from .env, only when this endpoint is used
     timeout_ms: 300000                  # optional (default 300000); bounds the whole request, including a server that sends headers only when done
     max_tokens: 4096                    # optional (default 4096)
+    context_tokens: 32768               # optional; server/model input + output context window
     retry:                              # optional
       statuses: [429, 500, 502, 503, 504]
       max_attempts: 3
       base_delay_ms: 2000
+    turn_retry:                         # optional: model calls within one agent turn (still one action)
+      max_attempts: 3                   #   default 3; 1 = a single request per turn
+      on: [context_overflow, output_truncated]  # default: both
     extra_body:                         # optional: merged into every request
       reasoning_effort: none
     thinking_body:                      # optional: merged over extra_body on turns the
@@ -1112,7 +1144,7 @@ Only when a server speaks neither the Anthropic Messages API nor Chat
 Completions:
 
 1. Implement `ModelProvider` (`src/models/types.ts`) in `src/models/<name>.ts`.
-   It makes one request per turn (there is no tool loop) and returns tool
+   It makes one request per `complete` call (there is no tool loop) and returns tool
    calls, text, stop reason, usage and latency.
 2. Add the protocol to `EndpointSchema` (`src/models/config.ts`) and to
    `createProvider` (`src/models/registry.ts`).
@@ -1298,7 +1330,7 @@ Policy / Mock provider → deterministic tool calls → Engine → Events
 
 Engine unit tests use the internal mock provider. Scenario smoke tests use
 experiment files whose agents are all policies (e.g.
-`experiments/first-contact-mock.yaml`).
+`tests/fixtures/first-contact-mock.yaml`).
 
 This allows testing map parsing, standard actions, mechanics, action
 validation, scheduling, hooks, event generation, the MCP server and the

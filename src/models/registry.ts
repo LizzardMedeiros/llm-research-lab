@@ -2,7 +2,7 @@ import { AnthropicProvider } from "./anthropic.js";
 import { interpolateEnv, type ProvidersConfig } from "./config.js";
 import { OpenAICompatibleProvider } from "./openai-compatible.js";
 import { DEFAULT_RETRY, type RetryPolicy, type Sleep } from "./retry.js";
-import type { ModelProvider } from "./types.js";
+import type { ModelProvider, TurnRetryPolicy } from "./types.js";
 
 export interface RegistryDeps {
   env?: NodeJS.ProcessEnv;
@@ -33,6 +33,8 @@ export function createProvider(config: ProvidersConfig, endpoint: string, deps: 
     maxDelayMs: entry.retry?.max_delay_ms ?? DEFAULT_RETRY.maxDelayMs,
   };
 
+  const turnRetry: TurnRetryPolicy = { maxAttempts: entry.turn_retry.max_attempts, on: entry.turn_retry.on };
+
   switch (entry.protocol) {
     case "anthropic":
       return new AnthropicProvider({
@@ -41,6 +43,8 @@ export function createProvider(config: ProvidersConfig, endpoint: string, deps: 
         ...(baseUrl ? { baseUrl } : {}),
         timeoutMs: entry.timeout_ms,
         defaultMaxTokens: entry.max_tokens,
+        ...(entry.context_tokens !== undefined ? { contextTokens: entry.context_tokens } : {}),
+        turnRetry,
         maxRetries: retry.maxAttempts - 1,
         ...(entry.extra_body ? { extraBody: entry.extra_body } : {}),
       });
@@ -51,6 +55,8 @@ export function createProvider(config: ProvidersConfig, endpoint: string, deps: 
         ...(apiKey ? { apiKey } : {}),
         timeoutMs: entry.timeout_ms,
         defaultMaxTokens: entry.max_tokens,
+        ...(entry.context_tokens !== undefined ? { contextTokens: entry.context_tokens } : {}),
+        turnRetry,
         retry,
         ...(entry.extra_body ? { extraBody: entry.extra_body } : {}),
         ...(entry.thinking_body ? { thinkingBody: entry.thinking_body } : {}),

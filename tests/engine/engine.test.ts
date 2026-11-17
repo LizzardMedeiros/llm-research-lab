@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { runExperiment } from "../../src/engine/runner.js";
 import { MemorySink } from "../../src/events/event.js";
+import { agentHistory, experimentSummary, type LoadedRun } from "../../src/mcp/run-reader.js";
+import { ProviderError } from "../../src/models/errors.js";
 import { MockProvider } from "../../src/models/mock.js";
 import { indexRun } from "../../src/story/story.js";
 // @ts-expect-error plain browser module, no types
@@ -26,7 +28,7 @@ describe("Engine", () => {
   it("first-contact-mock is reproducible for a seed", async () => {
     const run = async () => {
       const sink = new MemorySink();
-      await runExperiment("experiments/first-contact-mock.yaml", { sink, clock: () => new Date(0) });
+      await runExperiment("tests/fixtures/first-contact-mock.yaml", { sink, clock: () => new Date(0) });
       return sink.events.map(({ timestamp: _t, payload, ...rest }) => ({
         ...rest,
         payload: { ...payload, experiment_file: undefined, scenario: undefined },
@@ -115,6 +117,44 @@ describe("Engine", () => {
     expect(ofType(events, "agent.action", "m")[0]!.payload["rationale"]).toEqual({ type: "model_reported", content: "Going east." });
     const reasons = ofType(events, "environment.action_rejected", "m").map((e) => e.payload["reason"]);
     expect(reasons).toEqual([expect.stringMatching(/^no tool call/), 'unknown action "fly"']);
+  });
+
+  it("retries an eligible model failure within the turn, still applying one action", async () => {
+    const mock = new MockProvider([{ tool: "move", args: { direction: "east" } }]);
+    let calls = 0;
+    const provider = {
+      endpoint: "local",
+      turnRetry: { maxAttempts: 3, on: ["context_overflow" as const] },
+      complete: async (req: Parameters<MockProvider["complete"]>[0]) => {
+        if (calls++ === 1) throw new ProviderError("HTTP 400: prompt is too long", "local", 400);
+        return mock.complete(req);
+      },
+    };
+    const { events } = await runFixture(
+      {
+        "scenario.yaml": scenario({ spawn: [[0, 0]], rules: { end: { max_turns: 2 } } }),
+        "experiment.yaml": experiment([{ id: "m", provider: "local", model: "tiny", goal: "Explore." }]),
+      },
+      { providerFactory: () => provider },
+    );
+    const turn2 = (type: string) => ofType(events, type, "m").filter((e) => e.turn === 2);
+    expect(turn2("agent.model_request").map((e) => e.payload["attempt"])).toEqual([undefined, 2]);
+    expect(turn2("agent.action")).toHaveLength(1);
+    expect(ofType(events, "environment.action_rejected")).toHaveLength(0);
+    const final = ofType(events, "experiment.finished")[0]!.payload["snapshot"] as any;
+    expect(final.agents.m.position).toEqual([2, 0]);
+
+    const index = createIndex();
+    for (const e of events) addEvent(index, e);
+    const ui = index.turns.get(2).agents.get("m");
+    expect(ui.error).toBeUndefined();
+    expect(ui.retries).toEqual([{ attempt: 1, reason: "context_overflow", error: expect.stringContaining("too long") }]);
+
+    const run = { ref: "x", events } as unknown as LoadedRun;
+    const row = agentHistory(run, "m").turns.find((t) => t["turn"] === 2)!;
+    expect(row).toMatchObject({ model_attempts: 2, retried: expect.stringContaining("context_overflow") });
+    expect(row["model_error"]).toBeUndefined();
+    expect(experimentSummary(run).agents[0]!.model).toMatchObject({ requests: 3, errors: 1, retries_within_turn: 1 });
   });
 
   it("speak.free: one response may speak and act; each call is validated on its own", async () => {

@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { parse } from "yaml";
 import { z } from "zod";
+import { TURN_RETRY_REASONS } from "./types.js";
 
 const RetrySchema = z
   .object({
@@ -11,6 +12,14 @@ const RetrySchema = z
   })
   .strict();
 
+// Model calls within one agent turn; the turn still yields a single action.
+const TurnRetrySchema = z
+  .object({
+    max_attempts: z.number().int().min(1).default(3),
+    on: z.array(z.enum(TURN_RETRY_REASONS)).default([...TURN_RETRY_REASONS]),
+  })
+  .strict();
+
 const EndpointSchema = z
   .object({
     protocol: z.enum(["anthropic", "openai-compatible"]),
@@ -18,7 +27,9 @@ const EndpointSchema = z
     api_key: z.string().optional(),
     timeout_ms: z.number().int().positive().default(300_000),
     max_tokens: z.number().int().positive().default(4096),
+    context_tokens: z.number().int().positive().optional(),
     retry: RetrySchema.optional(),
+    turn_retry: TurnRetrySchema.default({ max_attempts: 3, on: [...TURN_RETRY_REASONS] }),
     extra_body: z.record(z.string(), z.unknown()).optional(),
     // Merged over extra_body on turns the scenario marks for thinking (rules `thinking` hook).
     thinking_body: z.record(z.string(), z.unknown()).optional(),
@@ -27,6 +38,9 @@ const EndpointSchema = z
   .strict()
   .refine((e) => e.protocol !== "openai-compatible" || e.base_url, {
     message: "openai-compatible endpoints require base_url",
+  })
+  .refine((e) => e.context_tokens === undefined || e.context_tokens > e.max_tokens, {
+    message: "context_tokens must be greater than max_tokens",
   });
 
 export const ProvidersConfigSchema = z
